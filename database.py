@@ -263,3 +263,33 @@ def load_recovery_data(db_path):
         return None, None
     finally:
         conn.close()
+
+def load_file_data_from_db(db_path):
+    """
+    File 테이블에서 데이터를 불러와 반환합니다.
+    """
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        query = """
+        SELECT 
+            Id, 
+            Path, 
+            Name, 
+            Extension, 
+            VolumeId
+        FROM File
+        ORDER BY Id;
+        """
+        cursor.execute(query)
+        data = cursor.fetchall()
+
+        headers = [description[0] for description in cursor.description]
+
+        return data, headers
+    except sqlite3.Error as e:
+        print(f"File 테이블 데이터 로드 오류: {e}")
+        return None, None
+    finally:
+        conn.close()
