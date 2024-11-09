@@ -12,8 +12,10 @@ from database import SQLiteTableModel, load_data_from_db, load_app_data_from_db,
     load_web_data  # load_app_data_from_db 및 load_web_data 추가
 from image_loader import ImageLoaderThread  # ImageLoaderThread 임포트
 from web import WebTableWidget as ImportedWebTableWidget  # WebTableWidget 추가
+from file_table import FileTableWidget
 from recovery_table import RecoveryTableWidget
 from no_focus_frame_style import NoFocusFrameStyle
+
 
 # 문자열 매핑 딕셔너리: 이벤트 이름을 간결한 이름으로 매핑
 name_mapping = {
@@ -146,6 +148,7 @@ class MainWindow(QMainWindow):
         self.web_table_tab = ImportedWebTableWidget()
         self.tab_widget.addTab(self.web_table_tab, "WebTable")
 
+        self.setup_file_table_tab()
         self.setup_image_table_tab()
 
         self.recovery_table_tab = RecoveryTableWidget()
@@ -174,6 +177,8 @@ class MainWindow(QMainWindow):
                 self.app_table_tab.set_db_path(db_path)
             if hasattr(self.web_table_tab, 'set_db_path'):
                 self.web_table_tab.set_db_path(db_path)
+            if hasattr(self.file_table_tab, 'set_db_path'):
+                self.file_table_tab.set_db_path(db_path)
             if hasattr(self.image_table_tab, 'set_db_path'):
                 self.image_table_tab.set_db_path(db_path)                
             if hasattr(self.recovery_table_tab, 'set_db_paths'):
@@ -286,6 +291,13 @@ class MainWindow(QMainWindow):
         scaled_pixmap = pixmap.scaled(self.image_label.width(), self.image_label.height(), Qt.KeepAspectRatio,
                                       Qt.SmoothTransformation)
         self.image_label.setPixmap(scaled_pixmap)
+
+    def setup_file_table_tab(self):
+        self.file_table_tab = FileTableWidget()
+        self.tab_widget.addTab(self.file_table_tab, "FileTable")
+        if self.db_path:
+            self.file_table_tab.set_db_path(self.db_path)
+
 
     def filter_table(self):
         filter_text = self.search_input.text()
