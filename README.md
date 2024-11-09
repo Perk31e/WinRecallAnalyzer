@@ -8,6 +8,7 @@ This tool integrates Windows Recall artifacts with existing digital forensic dat
 - [ ] Implement Web Table  
 - [ ] Add SRUM Analysis  
 - [ ] Add Initial Recovery Results
+- [ ] Convert .py to .exe binary file
 
 ## License
 
