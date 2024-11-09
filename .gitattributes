@@ -1,0 +1,19 @@
+# Default setting - Git will handle line endings automatically based on file type
+* text=auto
+
+# Ensure Python files use LF line endings
+*.py text eol=lf
+
+# Set shell scripts to LF
+*.sh text eol=lf
+
+# Set C and header files to LF
+*.c text eol=lf
+*.h text eol=lf
+
+# Visual Studio solution files should use CRLF for Windows compatibility
+*.sln text eol=crlf
+
+# Set binary files to not be altered
+*.png binary
+*.jpg binary

@@ -1,0 +1,13 @@
+# Python-related files
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# IDE and editor-specific files
+.vscode/
+.idea/
+
+# OS-generated files
+.DS_Store
+Thumbs.db
