@@ -4,4 +4,4 @@ This tool integrates Windows Recall artifacts with existing digital forensic dat
 
 ## Contributing
 
-Contributions are what make the open-source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**. For detailed guidelines, please refer to our [CONTRIBUTING.md](https://github.com/Perk31e/WinRecallAnalyzer/CONTRIBUTING.md).
+Contributions are what make the open-source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**. For detailed guidelines, please refer to our [CONTRIBUTING.md](https://github.com/Perk31e/WinRecallAnalyzer/blob/main/CONTRIBUTING.md).
