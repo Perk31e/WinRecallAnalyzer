@@ -1,6 +1,7 @@
-#image_table_one.py
+# image_table_one.py
+# ver 1.7
 
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QDateTimeEdit, QGridLayout, QSizePolicy, QApplication, QLineEdit
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QDateTimeEdit, QSizePolicy, QApplication, QLineEdit
 from PySide6.QtCore import Qt, QDateTime, Signal, QObject, QTimer
 from PySide6.QtGui import QPixmap, QKeyEvent, QDoubleValidator
 import sqlite3
@@ -24,7 +25,6 @@ class ImageTableWidget(QWidget):
         self.db_path = None
         self.images = []
         self.current_image_index = 0
-        self.max_size_set = False
 
         # 자동 이동 관련 속성
         self.auto_timer = QTimer(self)
@@ -113,19 +113,11 @@ class ImageTableWidget(QWidget):
         main_layout.addLayout(control_layout)
 
         # 이미지 디스플레이 및 버튼 레이아웃
-        image_container = QWidget()
-        image_layout = QGridLayout(image_container)
+        image_layout = QHBoxLayout()
         image_layout.setContentsMargins(0, 0, 0, 0)
         image_layout.setSpacing(0)
 
-        # 중앙에 현재 이미지 표시
-        self.image_display = QLabel()
-        self.image_display.setAlignment(Qt.AlignCenter)
-        self.image_display.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.image_display.setScaledContents(True)
-        image_layout.addWidget(self.image_display, 0, 0, Qt.AlignCenter)
-
-        # 이전 이미지 버튼을 이미지 왼쪽 중앙에 오버레이
+        # 이전 이미지 버튼을 왼쪽에 배치
         self.prev_button = QPushButton("<")
         self.prev_button.setFixedSize(50, 50)
         self.prev_button.setStyleSheet("""
@@ -146,9 +138,16 @@ class ImageTableWidget(QWidget):
         """)
         self.prev_button.clicked.connect(self.show_previous_image)
         self.prev_button.setEnabled(False)
-        image_layout.addWidget(self.prev_button, 0, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        image_layout.addWidget(self.prev_button, alignment=Qt.AlignVCenter)
 
-        # 다음 이미지 버튼을 이미지 오른쪽 중앙에 오버레이
+        # 중앙에 현재 이미지 표시
+        self.image_display = QLabel()
+        self.image_display.setAlignment(Qt.AlignCenter)
+        self.image_display.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
+        self.image_display.setScaledContents(True)  # 자동 스케일링 활성화
+        image_layout.addWidget(self.image_display, stretch=1)
+
+        # 다음 이미지 버튼을 오른쪽에 배치
         self.next_button = QPushButton(">")
         self.next_button.setFixedSize(50, 50)
         self.next_button.setStyleSheet("""
@@ -169,10 +168,10 @@ class ImageTableWidget(QWidget):
         """)
         self.next_button.clicked.connect(self.show_next_image)
         self.next_button.setEnabled(False)
-        image_layout.addWidget(self.next_button, 0, 0, Qt.AlignRight | Qt.AlignVCenter)
+        image_layout.addWidget(self.next_button, alignment=Qt.AlignVCenter)
 
-        # 이미지 컨테이너 추가
-        main_layout.addWidget(image_container, stretch=1)
+        # 이미지 레이아웃을 메인 레이아웃에 추가
+        main_layout.addLayout(image_layout, stretch=1)
 
         # 이미지 로더 초기화
         self.image_loader = ImageLoader()
@@ -184,33 +183,6 @@ class ImageTableWidget(QWidget):
     def load_image(self, image_path):
         """ AllTable에서 더블클릭으로 호출 시 이미지를 표시합니다 """
         self.image_loader.load_image(image_path)
-
-    def showEvent(self, event):
-        super().showEvent(event)
-        if not self.max_size_set:
-            self.update_maximum_size()
-            self.max_size_set = True
-        # 화면 해상도 변경 시 최대 크기 업데이트 연결
-        screen = QApplication.primaryScreen()
-        if screen:
-            screen.availableGeometryChanged.connect(self.update_maximum_size)
-
-    def update_maximum_size(self):
-        screen = QApplication.primaryScreen()
-        if screen:
-            screen_size = screen.availableGeometry()
-            margin = 10
-            self.setMaximumSize(screen_size.width() - margin, screen_size.height() - margin)
-            # 현재 창 크기 조정
-            current_size = self.size()
-            max_width = screen_size.width() - margin
-            max_height = screen_size.height() - margin
-            new_width = min(current_size.width(), max_width)
-            new_height = min(current_size.height(), max_height)
-            if current_size.width() > max_width or current_size.height() > max_height:
-                self.resize(new_width, new_height)
-        else:
-            print("화면 정보를 가져올 수 없습니다.")
 
     def set_db_path(self, db_path):
         """db_path 설정 및 이미지 로드"""
@@ -359,8 +331,6 @@ class ImageTableWidget(QWidget):
             base_image_path = os.path.join(image_dir, image_token)
             base_image_path = os.path.normpath(base_image_path)
 
-            print(f"Loading image from: {base_image_path}")  # 디버깅 출력
-
             # 이미지 파일 존재 여부 확인 (확장자 시도)
             possible_extensions = ['', '.jpg', '.jpeg', '.png']
             image_path = None
@@ -436,19 +406,6 @@ class ImageTableWidget(QWidget):
             event.accept()
         else:
             super().keyPressEvent(event)
-
-    # 창 크기가 변경될 때 이미지 스케일링
-    def resizeEvent(self, event):
-        if self.image_display.pixmap():
-            pixmap = self.image_display.pixmap()
-            if not pixmap.isNull():
-                scaled_pixmap = pixmap.scaled(
-                    self.image_display.size(),
-                    Qt.KeepAspectRatio,
-                    Qt.SmoothTransformation
-                )
-                self.image_display.setPixmap(scaled_pixmap)
-        super().resizeEvent(event)
 
     def update_button_state(self):
         # 이전 버튼 상태 업데이트
@@ -550,21 +507,3 @@ class ImageTableWidget(QWidget):
                 self.auto_move_direction = None
                 self.auto_next_button.setChecked(False)
                 self.auto_next_button.setText("Auto Next =>")
-
-    def display_image_from_token(self, image_token):
-        """이미지 토큰을 사용하여 이미지를 표시합니다."""
-        if self.db_path:
-            image_dir = os.path.join(os.path.dirname(self.db_path), "ImageStore")
-            image_path = os.path.join(image_dir, image_token)
-
-            # 경로 출력 확인
-            pass
-            pass
-
-            # 이미지 파일이 존재하는지 확인
-            if os.path.exists(image_path):
-                self.image_loader.load_image(image_path)
-            else:
-                self.image_display.setText("이미지 파일을 찾을 수 없습니다.")
-        else:
-            print("db_path가 설정되지 않았습니다.")

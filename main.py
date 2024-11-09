@@ -2,14 +2,18 @@
 
 import sys
 import os
-from PySide6.QtWidgets import QApplication, QMainWindow, QTableView, QVBoxLayout, QWidget, QFileDialog, QLabel, \
-    QHBoxLayout, QLineEdit, QSplitter, QStatusBar, QStyledItemDelegate, QTabWidget, QTextEdit, QSizePolicy
+import subprocess  # subprocess 임포트 추가
+from PySide6.QtWidgets import QApplication, QMainWindow, QTableView, QVBoxLayout, QWidget, QFileDialog, QLabel
+from PySide6.QtWidgets import QHBoxLayout, QLineEdit, QSplitter, QStatusBar, QStyledItemDelegate, QTabWidget, QTextEdit, \
+    QSizePolicy
 from PySide6.QtGui import QAction
 from PySide6.QtCore import Qt, QSortFilterProxyModel
-from database import SQLiteTableModel, load_data_from_db, load_app_data_from_db, load_web_data
-from image_loader import ImageLoaderThread
-from web import WebTableWidget as ImportedWebTableWidget
-from file_table import FileTableModel
+from database import SQLiteTableModel, load_data_from_db, load_app_data_from_db, \
+    load_web_data  # load_app_data_from_db 및 load_web_data 추가
+from image_loader import ImageLoaderThread  # ImageLoaderThread 임포트
+from web import WebTableWidget as ImportedWebTableWidget  # WebTableWidget 추가
+from recovery_table import RecoveryTableWidget
+from no_focus_frame_style import NoFocusFrameStyle
 
 # 문자열 매핑 딕셔너리: 이벤트 이름을 간결한 이름으로 매핑
 name_mapping = {
@@ -34,6 +38,8 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("ReCall DATA Parser")
         self.resize(1800, 900)
         self.db_path = ""
+        # main.py가 위치한 디렉토리 기준으로 ukg_recovered.db 경로 설정
+        self.recovered_db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ukg_recovered.db")
 
         # 상단 메뉴바 생성
         self.menu_bar = self.menuBar()
@@ -115,6 +121,8 @@ class MainWindow(QMainWindow):
         self.horizontal_splitter.addWidget(self.table_view)
         self.vertical_splitter = QSplitter(Qt.Vertical)
         self.horizontal_splitter.addWidget(self.vertical_splitter)
+        # NoFocusFrameStyle 적용
+        self.table_view.setStyle(NoFocusFrameStyle())
 
         self.horizontal_splitter.setStretchFactor(0, 3)
         self.horizontal_splitter.setStretchFactor(1, 1)
@@ -133,11 +141,15 @@ class MainWindow(QMainWindow):
         self.all_table_tab.setLayout(self.all_table_layout)
         self.tab_widget.addTab(self.all_table_tab, "AllTable")
 
-        self.setup_image_table_tab()
         self.setup_app_table_tab()
 
         self.web_table_tab = ImportedWebTableWidget()
         self.tab_widget.addTab(self.web_table_tab, "WebTable")
+
+        self.setup_image_table_tab()
+
+        self.recovery_table_tab = RecoveryTableWidget()
+        self.tab_widget.addTab(self.recovery_table_tab, "RecoveryTable")
 
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
@@ -160,10 +172,13 @@ class MainWindow(QMainWindow):
 
             if hasattr(self.app_table_tab, 'set_db_path'):
                 self.app_table_tab.set_db_path(db_path)
-            if hasattr(self.image_table_tab, 'set_db_path'):
-                self.image_table_tab.set_db_path(db_path)
             if hasattr(self.web_table_tab, 'set_db_path'):
                 self.web_table_tab.set_db_path(db_path)
+            if hasattr(self.image_table_tab, 'set_db_path'):
+                self.image_table_tab.set_db_path(db_path)                
+            if hasattr(self.recovery_table_tab, 'set_db_paths'):
+                # RecoveryTable에 원본 db 경로와 복구 db 경로를 모두 제공
+                self.recovery_table_tab.set_db_paths(original_db_path=db_path, recovered_db_path=self.recovered_db_path)
 
     def load_data(self, db_path):
         self.db_path = db_path
@@ -273,9 +288,8 @@ class MainWindow(QMainWindow):
         self.image_label.setPixmap(scaled_pixmap)
 
     def filter_table(self):
-        # 검색 입력에 따라 테이블 필터링
         filter_text = self.search_input.text()
-        self.proxy_model.setFilterWildcard(f"*{filter_text}*")
+        self.proxy_model.setFilterWildcard(filter_text)
 
 
 if __name__ == "__main__":

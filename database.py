@@ -231,3 +231,35 @@ def convert_timestamp(browser, timestamp):
         return convert_firefox_timestamp(timestamp)
     else:
         return None  # 다른 브라우저가 있을 경우 추가 변환 함수 필요
+
+def load_recovery_data(db_path):
+    """
+    re_WindowCapture 테이블에서 데이터를 불러와 필요한 컬럼을 반환합니다.
+    AppName은 빈 문자열로 설정하고, 이미지 컬럼은 'X'로 채웁니다.
+    """
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        query = """
+        SELECT 
+            Id, 
+            Name, 
+            WindowTitle, 
+            '' AS AppName,  -- AppName을 빈 문자열로 설정
+            TimeStamp,
+            'X' AS 이미지      -- 이미지 컬럼을 'X'로 설정
+        FROM re_WindowCapture
+        ORDER BY Id;
+        """
+        cursor.execute(query)
+        data = cursor.fetchall()
+
+        headers = ["Id", "Name", "WindowTitle", "AppName", "TimeStamp", "이미지"]
+
+        return data, headers
+    except sqlite3.Error as e:
+        print(f"re_WindowCapture 데이터 로드 오류: {e}")
+        return None, None
+    finally:
+        conn.close()

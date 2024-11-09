@@ -3,6 +3,7 @@
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QTableView, QLabel
 from PySide6.QtCore import Qt
 from database import SQLiteTableModel, load_app_data_from_db
+from no_focus_frame_style import NoFocusFrameStyle
 
 class AppTableWidget(QWidget):
     def __init__(self):
@@ -13,6 +14,8 @@ class AppTableWidget(QWidget):
     def setup_ui(self):
         # 테이블 뷰 및 데이터 없음 안내 레이블 추가
         self.table_view = QTableView(self)
+        # NoFocusFrameStyle 적용
+        self.table_view.setStyle(NoFocusFrameStyle())
         self.info_label = QLabel("데이터를 불러올 수 없습니다.", self)
         self.info_label.setAlignment(Qt.AlignCenter)
 
