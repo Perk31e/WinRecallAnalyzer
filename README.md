@@ -4,8 +4,11 @@ This tool integrates Windows Recall artifacts with existing digital forensic dat
 
 ## TO DO LIST
 
+- [X] Implement All Table
+- [X] Implement Image Table
 - [ ] Implement File Table  
-- [ ] Implement Web Table  
+- [ ] Implement Web Table
+- [ ] Implement App Table  
 - [ ] Add SRUM Analysis  
 - [ ] Add Initial Recovery Results
 - [ ] Convert .py to .exe binary file
