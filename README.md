@@ -4,7 +4,9 @@ This tool integrates Windows Recall artifacts with existing digital forensic dat
 
 ## What is Windows Recall?
 
-![recall_logo](https://github.com/user-attachments/assets/0a8243b3-955f-4267-9e8a-de231e305677)
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/0a8243b3-955f-4267-9e8a-de231e305677" alt="recall_logo">
+</p>
 1. Windows Recall captures a screen snapshot every 5 seconds and applies OCR, storing the results in a searchable database.
 2. This enables users to easily revisit and find past screen content directly from the database.
 
