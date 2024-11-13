@@ -1,3 +1,6 @@
+# Set line end character
+*.py text eol=lf
+
 # Python-related files
 __pycache__/
 *.py[cod]
