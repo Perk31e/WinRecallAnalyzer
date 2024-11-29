@@ -90,9 +90,16 @@ def check_integrity(db_path):
         print(f"무결성 검사 중 오류 발생: {e}")
 
 def main(source_db, recovered_db):
+    # Recover_Output 디렉토리 생성
+    output_dir = os.path.dirname(recovered_db)
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    
+    # 파일 경로 설정
+    dump_sql = os.path.join(output_dir, 'backup.sql')
+    filtered_dump_sql = os.path.join(output_dir, 'backup_filtered.sql')
+    
     sqlite_executable = 'sqlite3'  # 시스템 PATH에 sqlite3가 포함되어 있지 않다면, 절대 경로를 지정하세요.
-    dump_sql = 'backup.sql'
-    filtered_dump_sql = 'backup_filtered.sql'
 
     if not shutil.which(sqlite_executable):
         print(f"SQLite 명령줄 도구 '{sqlite_executable}'을(를) 찾을 수 없습니다.")

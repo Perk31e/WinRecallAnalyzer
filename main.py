@@ -2,20 +2,19 @@
 
 import sys
 import os
-import subprocess  # subprocess 임포트 추가
-from PySide6.QtWidgets import QApplication, QMainWindow, QTableView, QVBoxLayout, QWidget, QFileDialog, QLabel
-from PySide6.QtWidgets import QHBoxLayout, QLineEdit, QSplitter, QStatusBar, QStyledItemDelegate, QTabWidget, QTextEdit, \
-    QSizePolicy
+import subprocess
+import shutil
+from PySide6.QtWidgets import QApplication, QMainWindow, QTableView, QVBoxLayout, QWidget, QFileDialog, QLabel, \
+    QHBoxLayout, QLineEdit, QSplitter, QStatusBar, QStyledItemDelegate, QTabWidget, QTextEdit, QSizePolicy
 from PySide6.QtGui import QAction
 from PySide6.QtCore import Qt, QSortFilterProxyModel
-from database import SQLiteTableModel, load_data_from_db, load_app_data_from_db, \
-    load_web_data  # load_app_data_from_db 및 load_web_data 추가
-from image_loader import ImageLoaderThread  # ImageLoaderThread 임포트
-from web import WebTableWidget as ImportedWebTableWidget  # WebTableWidget 추가
+from database import SQLiteTableModel, load_data_from_db, load_app_data_from_db, load_web_data
+from image_loader import ImageLoaderThread
+from web import WebTableWidget as ImportedWebTableWidget
+from app_table import AppTableWidget
 from file_table import FileTableWidget
 from recovery_table import RecoveryTableWidget
 from no_focus_frame_style import NoFocusFrameStyle
-
 
 # 문자열 매핑 딕셔너리: 이벤트 이름을 간결한 이름으로 매핑
 name_mapping = {
@@ -78,6 +77,9 @@ class MainWindow(QMainWindow):
 
         # image_label에 마우스 더블클릭 이벤트 핸들러 설정
         self.image_label.mouseDoubleClickEvent = self.on_image_label_double_click
+
+        # 자동으로 분석 기능 실행
+        self.parse_files()
 
     def setup_image_table_tab(self):
         try:
@@ -163,27 +165,54 @@ class MainWindow(QMainWindow):
         self.table_view.selectionModel().selectionChanged.connect(self.update_image_display)
         self.search_input.textChanged.connect(self.filter_table)
 
-    def open_file_dialog(self):
-        desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
-        db_path, _ = QFileDialog.getOpenFileName(
-            self, "데이터베이스 파일 선택", desktop_path, "SQLite Files (*.db)"
-        )
+    def parse_files(self):
+        """파일 파싱 로직"""
+        try:
+            desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
+            app_table_data_path = os.path.join(desktop_path, "AppTable_data")
+            srudb_src_path = "C:\\Windows\\System32\\sru\\SRUDB.dat"
+            software_hive_dst_path = os.path.join(app_table_data_path, "SOFTWARE")
+            srudb_dst_path = os.path.join(app_table_data_path, "SRUDB.dat")
 
-        if db_path:
-            self.db_path = db_path
-            self.load_data(db_path)
+            # SRUM 파싱 실행
+            self.run_srum_parsing(srudb_dst_path, software_hive_dst_path, app_table_data_path)
+            # 추가: Prefetch, LNK, Jumplist 분석 준비
+            self.run_prefetch_analysis(app_table_data_path)
+            self.run_lnk_analysis(app_table_data_path)
+            self.run_jumplist_analysis(app_table_data_path)
 
-            if hasattr(self.app_table_tab, 'set_db_path'):
-                self.app_table_tab.set_db_path(db_path)
-            if hasattr(self.web_table_tab, 'set_db_path'):
-                self.web_table_tab.set_db_path(db_path)
-            if hasattr(self.file_table_tab, 'set_db_path'):
-                self.file_table_tab.set_db_path(db_path)
-            if hasattr(self.image_table_tab, 'set_db_path'):
-                self.image_table_tab.set_db_path(db_path)                
-            if hasattr(self.recovery_table_tab, 'set_db_paths'):
-                # RecoveryTable에 원본 db 경로와 복구 db 경로를 모두 제공
-                self.recovery_table_tab.set_db_paths(original_db_path=db_path, recovered_db_path=self.recovered_db_path)
+            self.status_bar.showMessage("파일 파싱 준비 완료")
+
+        except Exception as e:
+            self.status_bar.showMessage(f"오류 발생: {e}")
+
+    def run_srum_parsing(self, srudb_path, software_hive_path, output_dir):
+        """SRUM 데이터를 파싱합니다."""
+        try:
+            srum_tool_path = os.path.join(os.getcwd(), "SrumECmd.exe")
+            command = [
+                srum_tool_path,
+                "-f", srudb_path,
+                "-r", software_hive_path,
+                "--csv", output_dir
+            ]
+            subprocess.run(command, check=True)
+            print("SrumECmd 실행이 성공적으로 완료되었습니다.")
+        except subprocess.CalledProcessError as e:
+            print(f"SrumECmd 실행 중 오류 발생: {e}")
+
+    # Prefetch, LNK, Jumplist 분석 메서드들은 그대로 유지합니다
+    def run_prefetch_analysis(self, output_dir):
+        """Prefetch 데이터를 분석합니다."""
+        print("Prefetch 분석 준비 중... (아직 구현되지 않음)")
+
+    def run_lnk_analysis(self, output_dir):
+        """LNK 데이터를 분석합니다."""
+        print("LNK 분석 준비 중... (아직 구현되지 않음)")
+
+    def run_jumplist_analysis(self, output_dir):
+        """Jumplist 데이터를 분석합니다."""
+        print("Jumplist 분석 준비 중... (아직 구현되지 않음)")
 
     def load_data(self, db_path):
         self.db_path = db_path
@@ -221,6 +250,57 @@ class MainWindow(QMainWindow):
         else:
             self.status_bar.showMessage("데이터를 불러오지 못했습니다.")
 
+    def open_file_dialog(self):
+        desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
+        db_path, _ = QFileDialog.getOpenFileName(
+            self, "데이터베이스 파일 선택", desktop_path, "SQLite Files (*.db)"
+        )
+
+        if db_path:
+            # Recover_Output 디렉토리 생성
+            output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Recover_Output")
+            if not os.path.exists(output_dir):
+                os.makedirs(output_dir)
+
+            # 원본 디렉토리에서 ukg.db와 ukg.db-wal 파일 찾기
+            original_dir = os.path.dirname(db_path)
+            ukg_db_path = os.path.join(original_dir, "ukg.db")
+            ukg_wal_path = os.path.join(original_dir, "ukg.db-wal")
+
+            # Recover_Output에 복사할 파일 경로
+            recovered_wal_db = os.path.join(output_dir, "recovered_with_wal.db")
+            remained_wal = os.path.join(output_dir, "remained.db-wal")
+
+            # 기존 파일이 있다면 삭제
+            if os.path.exists(recovered_wal_db):
+                os.remove(recovered_wal_db)
+            if os.path.exists(remained_wal):
+                os.remove(remained_wal)
+
+            # ukg.db와 ukg.db-wal 파일 복사
+            if os.path.exists(ukg_db_path):
+                shutil.copyfile(ukg_db_path, recovered_wal_db)
+                if os.path.exists(ukg_wal_path):
+                    shutil.copyfile(ukg_wal_path, remained_wal)
+                    self.status_bar.showMessage("ukg.db와 ukg.db-wal 파일을 복사했습니다.")
+                else:
+                    self.status_bar.showMessage("ukg.db 파일만 복사했습니다. (ukg.db-wal 파일 없음)")
+            else:
+                self.status_bar.showMessage("ukg.db 파일을 찾을 수 없습니다.")
+
+            # 기존 코드 유지 - 선택한 DB 파일로 작업
+            self.db_path = db_path
+            self.load_data(db_path)
+
+            if hasattr(self.app_table_tab, 'set_db_path'):
+                self.app_table_tab.set_db_path(db_path)
+            if hasattr(self.image_table_tab, 'set_db_path'):
+                self.image_table_tab.set_db_path(db_path)
+            if hasattr(self.web_table_tab, 'set_db_path'):
+                self.web_table_tab.set_db_path(db_path)
+            if hasattr(self.recovery_table_tab, 'set_db_paths'):
+                self.recovery_table_tab.set_db_paths(db_path, recovered_wal_db)
+
     def open_history_file_dialog(self):
         desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
         db_path, _ = QFileDialog.getOpenFileName(
@@ -229,8 +309,10 @@ class MainWindow(QMainWindow):
         if db_path:
             # web_table_tab에 set_history_db_path가 있는지 확인한 후 호출
             if hasattr(self.web_table_tab, 'set_history_db_path'):
-                print(f"선택된 파일 경로: {db_path}")  # 경로 확인용 로그 추가
+                print(f"선택된 파일 경로: {db_path}")
                 self.web_table_tab.set_history_db_path(db_path)
+                self.web_table_tab.load_data()
+                self.web_table_tab.update_related_data_status()
             else:
                 print("web_table_tab에 set_history_db_path 메서드가 없습니다.")
 
@@ -301,8 +383,7 @@ class MainWindow(QMainWindow):
 
     def filter_table(self):
         filter_text = self.search_input.text()
-        self.proxy_model.setFilterWildcard(filter_text)
-
+        self.proxy_model.setFilterWildcard(f"*{filter_text}*")
 
 if __name__ == "__main__":
     try:

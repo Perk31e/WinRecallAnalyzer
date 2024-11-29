@@ -5,13 +5,33 @@ import shutil
 import sqlite3
 import os
 import glob
-from datetime import datetime, timedelta
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QTableView, QLabel, QSplitter, QDialog, QMessageBox, QFrame, \
-    QSpacerItem, QSizePolicy, QHBoxLayout
-
-from database import SQLiteTableModel, load_web_data, convert_unix_timestamp, convert_timestamp
+import re
+from datetime import datetime, timedelta, timezone
+from PySide6.QtCore import QSortFilterProxyModel, Qt
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QTableView, QTextEdit, QSplitter, QDialog, QMessageBox, QFrame, \
+    QSpacerItem, QSizePolicy, QHBoxLayout, QLabel
+from database import SQLiteTableModel, load_web_data, load_data_from_db
 from no_focus_frame_style import NoFocusFrameStyle
+
+# 사용자 정의 정규 표현식 매칭 함수
+def regexp(pattern, input_str):
+    if input_str is None:
+        return False
+    return re.search(pattern, input_str) is not None
+
+# 타임스탬프 변환 함수
+def convert_chrome_timestamp(chrome_timestamp):
+    base_date = datetime(1601, 1, 1, tzinfo=timezone.utc)
+    timestamp_seconds = chrome_timestamp / 1_000_000  # 마이크로초를 초 단위로 변환
+    converted_time = base_date + timedelta(seconds=timestamp_seconds)
+    return converted_time
+
+def convert_unix_timestamp(unix_timestamp):
+    return datetime.fromtimestamp(unix_timestamp / 1000, tz=timezone.utc).replace(microsecond=0)
+
+# Helper function to simplify Title
+def simplify_title(title):
+    return re.sub(r"( - Chrome)$", "", title)
 
 class DetailDialog(QDialog):
     def __init__(self, data, headers, parent=None):
@@ -41,140 +61,239 @@ class DetailDialog(QDialog):
         frame_layout.addSpacerItem(QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding))
         layout.addWidget(frame)
 
-
 class WebTableWidget(QWidget):
     def __init__(self, db_path=""):
         super().__init__()
         self.db_path = db_path
+        self.history_db_path = None
         self.user_path = os.path.expanduser("~")
         self.history_folder = os.path.join(self.user_path, "Desktop", "History_load")
         self.setup_ui()
+
+        # 필터링 및 정렬 모델 설정
+        self.proxy_model = QSortFilterProxyModel(self)
+        self.proxy_model.setFilterKeyColumn(1)  # Window Title 열 필터링
+        self.proxy_model.setFilterCaseSensitivity(Qt.CaseInsensitive)
+        self.table_view.setModel(self.proxy_model)
+        self.table_view.setSortingEnabled(True)  # 테이블 정렬 활성화
+
+        # 브라우저 키워드 목록 추가
+        self.browser_keywords = ["Chrome", "Firefox", "Edge", "Whale"]
+        self.filter_browser_data()
 
         # 데이터베이스를 열기 전에 파일 복사 여부를 묻는 창 띄우기
         reply = QMessageBox.question(self, "파일 복사", "브라우저 히스토리 및 ukg.db 파일을 바탕화면에 복사하시겠습니까?",
                                      QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         self.copy_files = reply == QMessageBox.Yes
         if self.copy_files:
-            self.copy_history_files()  # 사용자가 '예'를 선택한 경우에만 파일 복사 수행
+            self.copy_history_files()
 
-        # 복사 후에 데이터베이스 로드
+        # 데이터베이스 로드
         if self.db_path:
-            self.load_web_data()
+            self.load_data()
 
     def setup_ui(self):
         layout = QSplitter(Qt.Horizontal, self)
-
-        # History 테이블 뷰
         self.table_view = QTableView()
-        self.table_view.setSortingEnabled(True)  # 정렬 활성화
+        self.table_view.setSortingEnabled(True)
+        # 포커스 프레임 스타일 적용
+        self.table_view.setStyle(NoFocusFrameStyle())
         layout.addWidget(self.table_view)
 
-        # 테이블 셀 더블클릭 시 show_detail_dialog 메서드 호출
-        self.table_view.doubleClicked.connect(lambda index: self.show_detail_dialog(index, self.table_view))
+        # 데이터 뷰어 추가
+        self.data_viewer = QTextEdit("데이터 프리뷰")
+        self.data_viewer.setReadOnly(True)
+        layout.addWidget(self.data_viewer)
 
-        # UKG.db 테이블 뷰
-        self.history_table = QTableView()
-        self.history_table.setSortingEnabled(True)  # 정렬 활성화
-        layout.addWidget(self.history_table)
-
-        # 테이블 셀 더블클릭 시 show_detail_dialog 메서드 호출
-        self.history_table.doubleClicked.connect(lambda index: self.show_detail_dialog(index, self.history_table))
-
-        # 메인 레이아웃 설정
         main_layout = QVBoxLayout(self)
         main_layout.addWidget(layout)
+        self.setLayout(main_layout)
 
-        # 데이터 로드 실패 시 안내 레이블
-        self.info_label = QLabel("데이터를 로드할 수 없습니다.")
-        self.info_label.setAlignment(Qt.AlignCenter)
-        main_layout.addWidget(self.info_label)
-        self.info_label.hide()
-        self.table_view.setStyle(NoFocusFrameStyle())
-        self.history_table.setStyle(NoFocusFrameStyle())
+        self.table_view.clicked.connect(self.display_related_history_data)
 
+    def filter_browser_data(self):
+        pattern = "|".join(self.browser_keywords)  # "Chrome|Firefox|Edge|Whale"
+        self.proxy_model.setFilterRegularExpression(pattern)
 
     def set_db_path(self, db_path):
-        """
-        사용자가 웹 데이터 DB 파일을 선택한 경우 호출됩니다.
-        """
         self.db_path = db_path
-        self.load_web_data(update_history=False)  # 히스토리 테이블을 초기화하지 않도록 설정
+        self.load_data()
 
-    def set_history_db_path(self, db_path):
-        """
-        사용자가 히스토리 파일을 선택한 경우 호출됩니다.
-        """
-        self.db_path = db_path
-        print(f"새로운 히스토리 파일 경로가 설정되었습니다: {self.db_path}")
-        self.history_table.setModel(None)  # 이전 데이터 제거
-        self.load_browser_history_data()  # 새로운 경로로 데이터 로드
+    def set_history_db_path(self, history_db_path):
+        self.history_db_path = history_db_path
+        print(f"새로운 히스토리 파일 경로가 설정되었습니다: {self.history_db_path}")
 
-    def load_web_data(self, update_history=True):
-        """
-        웹 데이터를 로드합니다. update_history 플래그에 따라 히스토리 데이터를 갱신할지 결정합니다.
-        """
-        print(f"Loading Web data from: {self.db_path}")
-        keywords = ["Edge"]
-        data, headers = load_web_data(self.db_path, keywords=keywords)
+    def load_data(self):
+        if self.db_path:
+            data, headers = load_web_data(self.db_path)
+            if data:
+                # 연관 데이터 유/무를 표시하기 위해 데이터 수정
+                extended_data = []
+                for row in data:
+                    title = row[1]  # 타이틀 열의 인덱스
+                    timestamp = row[2]  # TimeStamp가 있는 열의 인덱스
+                    has_related_data = self.check_related_data(timestamp, title)
+                    row = list(row)  # 튜플을 리스트로 변환
+                    row.append("O" if has_related_data else "X")  # "O" 또는 "X" 추가
+                    extended_data.append(row)
 
-        if data:
-            model = SQLiteTableModel(data, headers)
-            self.table_view.setModel(model)
-            self.headers = headers  # headers 저장
-            self.info_label.hide()
+                headers.append("Related Data")  # 새로운 열 헤더 추가
+                model = SQLiteTableModel(extended_data, headers)
+                self.proxy_model.setSourceModel(model)  # proxy_model에 모델 설정
+                self.table_view.setModel(self.proxy_model)  # 정렬이 작동하도록 모델 설정
 
-            for i, header in enumerate(headers):
-                if "Timestamp" in header or "Last Visit Time" in header:
-                    self.table_view.resizeColumnToContents(i)
-        else:
-            self.table_view.setModel(None)
+                # 새로 추가된 열의 너비 조정
+                self.table_view.resizeColumnToContents(len(headers) - 1)
+            else:
+                self.table_view.setModel(None)
 
-        # update_history가 True일 때만 히스토리 데이터를 초기화
-        if update_history:
-            self.load_browser_history_data()
+    def update_related_data_status(self):
+        model = self.table_view.model()
+        if not model:
+            return
 
-    def load_browser_history_data(self):
-        """
-        브라우저 히스토리 데이터를 로드하고, history_table에 설정합니다.
-        데이터가 없는 경우 info_label을 숨깁니다.
-        """
-        # 현재 설정된 db_path 출력 확인
-        print(f"Loading browser history from: {self.db_path}")
+        for row in range(model.rowCount()):
+            title = model.index(row, 1).data()
+            timestamp = model.index(row, 2).data()
+            related_data_exists = self.check_related_data(timestamp, title)
+            status = "O" if related_data_exists else "X"
+            model.setData(model.index(row, 3), status)
 
-        # 브라우저 히스토리 데이터 로드
-        history_data, history_headers = self.load_browser_history()
+        model.layoutChanged.emit()
 
-        # 데이터 유무를 확인하고, 출력해 봄
-        if history_data:
-            print("히스토리 데이터 로드 성공, 테이블에 설정 중...")
-            history_model = SQLiteTableModel(history_data, history_headers)
-            self.history_table.setModel(history_model)
+    def check_related_data(self, timestamp_ukg, title_ukg):
+        if not self.history_db_path or title_ukg is None or timestamp_ukg is None:
+            return False
 
-            for i, header in enumerate(history_headers):
-                if "Timestamp" in header or "Last Visit Time" in header:
-                    self.history_table.resizeColumnToContents(i)
-        else:
-            print("히스토리 데이터가 비어 있습니다.")
-            self.history_table.setModel(None)  # 데이터가 없을 경우 테이블 비우기
-            self.info_label.hide()  # 메시지를 표시하지 않음
+        conn = None
+        try:
+            # Check if timestamp_ukg is a string and try to parse it correctly
+            if isinstance(timestamp_ukg, str):
+                try:
+                    # Try to convert timestamp from string to float
+                    timestamp_ukg = float(datetime.strptime(timestamp_ukg, "%Y-%m-%d %H:%M:%S").timestamp()) * 1000
+                except ValueError:
+                    return False
 
-    def show_detail_dialog(self, index, table):
+            conn = sqlite3.connect(self.history_db_path)
+            conn.create_function("REGEXP", 2, regexp)
+            cursor = conn.cursor()
+
+            # Convert ukg.db timestamp to KST (seconds)
+            try:
+                kst_time_ukg = datetime.fromtimestamp(timestamp_ukg / 1000, tz=timezone.utc).astimezone(
+                    timezone(timedelta(hours=9))
+                )
+                ukg_unix_timestamp = int(kst_time_ukg.timestamp())
+            except ValueError:
+                return False
+
+            # Simplify the Title: Remove " - Chrome" at the end
+            simplified_title = re.sub(r" - Chrome$", "", title_ukg)
+
+            # Query to fetch related data from the browser history
+            query = "SELECT title, last_visit_time FROM urls WHERE title REGEXP ?"
+            cursor.execute(query, (simplified_title,))
+            data = cursor.fetchall()
+
+            for row in data:
+                chrome_title = row[0]
+                chrome_time = row[1]
+                kst_time_converted = convert_chrome_timestamp(chrome_time).astimezone(
+                    timezone(timedelta(hours=9))
+                )
+                browser_unix_timestamp = int(kst_time_converted.timestamp())
+
+                if chrome_title == simplified_title and browser_unix_timestamp == ukg_unix_timestamp:
+                    return True
+
+            return False
+
+        except sqlite3.Error:
+            return False
+
+        finally:
+            if conn:
+                conn.close()
+
+    def display_related_history_data(self, index):
+        if not self.history_db_path:
+            self.data_viewer.setText("히스토리 파일 경로가 설정되지 않았습니다.")
+            return
+
+        selected_title = self.table_view.model().index(index.row(), 1).data()
+        timestamp_ukg = self.table_view.model().index(index.row(), 2).data()
+        if not selected_title or not timestamp_ukg:
+            self.data_viewer.setText("선택된 타이틀 또는 타임스탬프가 비어 있습니다.")
+            return
+
+        simplified_title = re.sub(r" - Chrome$", "", selected_title)
+
+        try:
+            conn = sqlite3.connect(self.history_db_path)
+            conn.create_function("REGEXP", 2, regexp)
+            cursor = conn.cursor()
+
+            # 타임스탬프를 KST로 변환
+            try:
+                kst_time = datetime.strptime(timestamp_ukg, "%Y-%m-%d %H:%M:%S").replace(
+                    tzinfo=timezone(timedelta(hours=9))
+                )
+                unix_timestamp = int(kst_time.timestamp())
+            except ValueError:
+                self.data_viewer.setText("타임스탬프 변환 오류가 발생했습니다.")
+                return
+
+            query = "SELECT url, title, visit_count, last_visit_time FROM urls WHERE title REGEXP ?"
+            cursor.execute(query, (simplified_title,))
+            data = cursor.fetchall()
+
+            related_data = []
+            for row in data:
+                chrome_title = row[1]
+                chrome_time = row[3]
+                # Chrome 시간도 KST로 변환
+                kst_time_converted = convert_chrome_timestamp(chrome_time).astimezone(
+                    timezone(timedelta(hours=9))
+                )
+
+                if simplified_title == chrome_title and int(kst_time_converted.timestamp()) == unix_timestamp:
+                    related_data.append(row)
+
+            if related_data:
+                formatted_data = []
+                for row in related_data:
+                    last_visit_time = row[3]
+                    # KST로 변환된 시간을 표시
+                    converted_time = convert_chrome_timestamp(last_visit_time).astimezone(timezone(timedelta(hours=9)))
+                    formatted_data.append(
+                        f"URL: {row[0]}\nTitle: {row[1]}\nVisit Count: {row[2]}\nLast Visit Time: {converted_time}\n---"
+                    )
+                self.data_viewer.setText("\n".join(formatted_data))
+            else:
+                self.data_viewer.setText("연관된 히스토리 데이터를 찾을 수 없습니다.")
+
+        except sqlite3.Error as e:
+            self.data_viewer.setText(f"히스토리 데이터를 로드하는 중 오류가 발생했습니다: {e}")
+
+        finally:
+            if conn:
+                conn.close()
+
+    def show_detail_dialog(self, index):
         row_data = []
         headers = []
 
-        # 선택된 행의 데이터와 열 이름을 가져와서 row_data와 headers에 추가
-        for column in range(table.model().columnCount()):
-            item = table.model().index(index.row(), column).data()
-            header = table.model().headerData(column, Qt.Horizontal)
+        for column in range(self.table_view.model().columnCount()):
+            item = self.table_view.model().index(index.row(), column).data()
+            header = self.table_view.model().headerData(column, Qt.Horizontal)
             row_data.append(item)
             headers.append(header)
 
-        # DetailDialog 창 열기
         detail_dialog = DetailDialog(row_data, headers, self)
         detail_dialog.exec_()
 
     def copy_history_files(self):
-        # 각 브라우저의 히스토리 파일 경로
         history_paths = {
             "Chrome": os.path.join(self.user_path, r"AppData\Local\Google\Chrome\User Data\Default\History"),
             "Firefox": os.path.join(self.user_path, r"AppData\Roaming\Mozilla\Firefox\Profiles", "default-release",
@@ -183,10 +302,8 @@ class WebTableWidget(QWidget):
             "Whale": os.path.join(self.user_path, r"AppData\Local\Naver\Naver Whale\User Data\Default\History")
         }
 
-        # 바탕화면의 History_load 폴더 생성
         os.makedirs(self.history_folder, exist_ok=True)
 
-        # 브라우저 히스토리 파일 복사
         for browser, path in history_paths.items():
             try:
                 if os.path.exists(path):
@@ -195,9 +312,8 @@ class WebTableWidget(QWidget):
             except Exception as e:
                 print(f"{browser} 히스토리 파일 복사 중 오류: {e}")
 
-        # CoreAI ukg.db 파일 복사
         ukp_folder_path = os.path.join(self.user_path, r"AppData\Local\CoreAIPlatform.00\UKP")
-        guid_folders = glob.glob(os.path.join(ukp_folder_path, "{*}"))  # GUID 형식 폴더 검색
+        guid_folders = glob.glob(os.path.join(ukp_folder_path, "{*}"))
 
         core_ai_path = None
         for folder in guid_folders:
@@ -214,87 +330,3 @@ class WebTableWidget(QWidget):
                 print(f"CoreAI ukg.db 파일 복사 중 오류: {e}")
         else:
             print("CoreAI ukg.db 파일을 찾을 수 없습니다.")
-
-    def load_browser_history(self):
-        results = []
-        for browser in ["Chrome", "Edge", "Whale", "Firefox"]:
-            data = self.load_browser_data(browser)
-            if data:  # 빈 데이터가 아닌 경우에만 추가
-                results.extend(data)
-        # 데이터가 없을 경우 빈 리스트와 빈 헤더 리스트 반환
-        return results or [], ["URL", "Title", "Visit Count", "Total Visit Duration (seconds)", "TimeStamp"]
-
-    def load_browser_data(self, browser):
-        db_path = self.db_path  # 사용자 지정 파일 경로 사용
-        print(f"브라우저 데이터베이스 파일 경로: {db_path}")
-
-        # 파일이 실제로 존재하는지 확인
-        if not os.path.exists(db_path):
-            print(f"{browser} 히스토리 파일을 찾을 수 없습니다: {db_path}")
-            return []
-
-        try:
-            # 데이터베이스 연결 시도
-            conn = sqlite3.connect(db_path)
-            cursor = conn.cursor()
-
-            # 각 브라우저에 맞는 쿼리
-            if browser in ["Chrome", "Edge", "Whale"]:
-                query = """
-                SELECT urls.url, urls.title, urls.visit_count,
-                       urls.last_visit_time,
-                       SUM(visits.visit_duration) AS total_visit_duration
-                FROM urls
-                LEFT JOIN visits ON urls.id = visits.url
-                GROUP BY urls.url, urls.title, urls.visit_count, urls.last_visit_time
-                ORDER BY urls.visit_count DESC
-                """
-            elif browser == "Firefox":
-                query = """
-                SELECT moz_places.url, moz_places.title, moz_places.visit_count, 
-                       MIN(moz_historyvisits.visit_date) AS first_visit,
-                       MAX(moz_historyvisits.visit_date) AS last_visit
-                FROM moz_places
-                JOIN moz_historyvisits ON moz_places.id = moz_historyvisits.place_id
-                GROUP BY moz_places.url, moz_places.title, moz_places.visit_count
-                ORDER BY moz_places.visit_count DESC
-                """
-
-            # 쿼리 실행 및 결과 확인
-            cursor.execute(query)
-            rows = cursor.fetchall()
-            print(f"로드된 행 수: {len(rows)}")  # 로드된 데이터의 개수를 출력
-
-            # 데이터가 비어있다면 빈 리스트 반환
-            if not rows:
-                print(f"{browser} 데이터가 없습니다.")
-                return []
-
-            # 데이터 변환 및 반환
-            results = []
-            for row in rows:
-                if browser == "Firefox":
-                    url, title, visit_count, first_visit, last_visit = row
-                    if first_visit and last_visit:
-                        visit_duration = (last_visit - first_visit) / 1_000_000
-                        timestamp = datetime.fromtimestamp(last_visit / 1_000_000).strftime('%Y-%m-%d %H:%M:%S')
-                    else:
-                        visit_duration = 0
-                        timestamp = None
-                else:
-                    url, title, visit_count, last_visit_time, visit_duration = row
-                    if last_visit_time:
-                        timestamp = datetime(1601, 1, 1) + timedelta(microseconds=last_visit_time)
-                        timestamp = timestamp.strftime('%Y-%m-%d %H:%M:%S')
-                    else:
-                        timestamp = None
-
-                results.append([url, title, visit_count, visit_duration, timestamp])
-
-            return results
-
-        except sqlite3.Error as e:
-            print(f"{browser} 히스토리 데이터베이스 오류: {e}")
-            return []
-        finally:
-            conn.close()

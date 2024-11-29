@@ -15,8 +15,18 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
+# Recover_Output directory and its contents
+Recover_Output/
+
 # recover files, ukg.db file
 backup_filtered.sql
 backup.sql
 ukg_recovered.db
 ukg.db
+recovered_with_wal.db
+recovered_with_wal.db-wal
+recovered_with_wal.db-shm
+remained.db-wal
+
+# prefetch output file
+prefetch_output.csv
