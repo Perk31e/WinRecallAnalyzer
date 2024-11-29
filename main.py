@@ -39,8 +39,6 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("ReCall DATA Parser")
         self.resize(1800, 900)
         self.db_path = ""
-        # main.py가 위치한 디렉토리 기준으로 ukg_recovered.db 경로 설정
-        self.recovered_db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ukg_recovered.db")
 
         # 상단 메뉴바 생성
         self.menu_bar = self.menuBar()

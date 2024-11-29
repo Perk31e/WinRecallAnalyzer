@@ -232,24 +232,31 @@ def convert_timestamp(browser, timestamp):
     else:
         return None  # 다른 브라우저가 있을 경우 추가 변환 함수 필요
 
-def load_recovery_data(db_path, wal_db_path=None):
+def load_recovery_data(db_path):
     """
     re_WindowCapture 테이블과 App 관련 테이블에서 데이터를 불러와 반환합니다.
     
     Args:
         db_path: 복구된 데이터베이스 파일 경로
-        wal_db_path: WAL 복구 데이터베이스 파일 경로 (선택적)
     
     Returns:
         tuple: (데이터 리스트, 헤더 리스트) 또는 오류 시 (None, None)
     """
     try:
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
+        # Recover_Output 디렉토리 경로 설정
+        output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Recover_Output")
+        
+        # recovered_with_sqlite_recovery.db 연결
+        recovery_conn = sqlite3.connect(db_path)
+        cursor = recovery_conn.cursor()
 
-        if wal_db_path and os.path.exists(wal_db_path):
+        # recovered_with_wal.db 경로 설정
+        wal_path = os.path.join(output_dir, "recovered_with_wal.db")
+        
+        if os.path.exists(wal_path):
+            print(f"WAL DB 파일 발견: {wal_path}")
             # WAL DB가 있는 경우 ATTACH하고 App 정보를 포함하여 조회
-            conn.execute(f"ATTACH DATABASE '{wal_db_path}' AS wal_db")
+            recovery_conn.execute(f"ATTACH DATABASE '{wal_path}' AS wal_db")
             query = """
             SELECT 
                 r.Id, 
@@ -264,6 +271,7 @@ def load_recovery_data(db_path, wal_db_path=None):
             ORDER BY r.Id;
             """
         else:
+            print(f"WAL DB 파일 없음: {wal_path}")
             # WAL DB가 없는 경우 기본 정보만 조회
             query = """
             SELECT 
@@ -295,8 +303,8 @@ def load_recovery_data(db_path, wal_db_path=None):
         print(f"복구 데이터 로드 오류: {e}")
         return None, None
     finally:
-        if 'conn' in locals():
-            conn.close()
+        if 'recovery_conn' in locals():
+            recovery_conn.close()
 
 def load_file_data_from_db(db_path):
     """
