@@ -28,7 +28,7 @@ class RecoveryThread(QThread):
             conn = sqlite3.connect(self.original_db)
             cursor = conn.cursor()
             '''
-            # 1. idTable의 첫 번째 Attribute의 NextId ��� 확인
+            # 1. idTable의 첫 번째 Attribute의 NextId 값 확인
             cursor.execute("SELECT NextId FROM idTable LIMIT 1;")
             id_table_row = cursor.fetchone()
             if not id_table_row:
