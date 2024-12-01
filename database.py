@@ -99,12 +99,11 @@ def load_app_data_from_db(db_path):
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
 
-        # 각 App ID에 대해 고유한 WindowCapture 데이터만 반환하도록 중복을 제거한 쿼리 작성
+        # SQL 쿼리: WindowsAppID는 가져오고, Name 칼럼은 제외
         query = """
         SELECT 
             app.ID,
             app.WindowsAppID,
-            app.NAME,
             app.PATH,          -- App 경로
             adt.HourStartTimeStamp,
             adt.DwellTime,     -- 앱 사용 시간 (밀리초 단위)
@@ -122,7 +121,7 @@ def load_app_data_from_db(db_path):
         cursor.execute(query)
         data = cursor.fetchall()
 
-        # 열 이름 가져오기
+        # 열 이름 가져오기 (Name 칼럼 제외)
         headers = [description[0] for description in cursor.description]
 
         # 시간 변환 처리
@@ -130,14 +129,14 @@ def load_app_data_from_db(db_path):
         for row in data:
             row = list(row)
             # HourStartTimeStamp 변환
-            if row[4]:
-                row[4] = convert_unix_timestamp(row[4])
+            if row[3]:
+                row[3] = convert_unix_timestamp(row[3])
             # DwellTime 변환
-            if row[5]:
-                row[5] = round(row[5] / 1000, 2)  # 밀리초 -> 초 단위 변환
+            if row[4]:
+                row[4] = round(row[4] / 1000, 2)  # 밀리초 -> 초 단위 변환
             # TimeStamp 변환
-            if row[6]:
-                row[6] = convert_unix_timestamp(row[6])
+            if row[5]:
+                row[5] = convert_unix_timestamp(row[5])
             converted_data.append(row)
 
         return converted_data, headers
@@ -146,7 +145,6 @@ def load_app_data_from_db(db_path):
         return None, None
     finally:
         conn.close()
-
 
 def load_web_data(db_path, keywords=None):
     """Web 테이블의 모든 URI는 필터링에 포함되지 않으며, 해당 ID의 WindowTitle과 TimeStamp도 함께 가져옵니다.
@@ -232,27 +230,28 @@ def convert_timestamp(browser, timestamp):
     else:
         return None  # 다른 브라우저가 있을 경우 추가 변환 함수 필요
 
+
 def load_recovery_data(db_path):
     """
     re_WindowCapture 테이블과 App 관련 테이블에서 데이터를 불러와 반환합니다.
-    
+
     Args:
         db_path: 복구된 데이터베이스 파일 경로
-    
+
     Returns:
         tuple: (데이터 리스트, 헤더 리스트) 또는 오류 시 (None, None)
     """
     try:
         # Recover_Output 디렉토리 경로 설정
         output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Recover_Output")
-        
+
         # recovered_with_sqlite_recovery.db 연결
         recovery_conn = sqlite3.connect(db_path)
         cursor = recovery_conn.cursor()
 
         # recovered_with_wal.db 경로 설정
         wal_path = os.path.join(output_dir, "recovered_with_wal.db")
-        
+
         if os.path.exists(wal_path):
             print(f"WAL DB 파일 발견: {wal_path}")
             # WAL DB가 있는 경우 ATTACH하고 App 정보를 포함하여 조회
@@ -305,6 +304,7 @@ def load_recovery_data(db_path):
     finally:
         if 'recovery_conn' in locals():
             recovery_conn.close()
+
 
 def load_file_data_from_db(db_path):
     """

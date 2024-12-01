@@ -2,6 +2,20 @@
 
 This tool integrates Windows Recall artifacts with existing digital forensic databases to facilitate forensic analysis. It is designed to import, search, and analyze various browser histories and image capture data while offering data recovery features to restore lost records.
 
+## Requirements
+
+- Python 3.12.7 64-bit
+- Required libraries:
+  - PySide6: Qt-based GUI framework (v6.6.1)
+  - pandas: Data manipulation and analysis (v2.2.0)
+  - sqlparse: SQL parsing and formatting (v0.4.4)
+
+You can install all required packages using:
+
+```
+pip install -r requirements.txt
+```
+
 ## What is Windows Recall?
 
 <p align="center">
@@ -12,12 +26,12 @@ This tool integrates Windows Recall artifacts with existing digital forensic dat
 
 ## TO DO LIST
 
-- [X] Implement All Table
-- [X] Implement Image Table
-- [ ] Implement File Table  
+- [x] Implement All Table
+- [x] Implement Image Table
+- [ ] Implement File Table
 - [ ] Implement Web Table
-- [ ] Implement App Table  
-- [ ] Add SRUM Analysis  
+- [ ] Implement App Table
+- [ ] Add SRUM Analysis
 - [ ] Add Initial Recovery Results
 - [ ] Convert .py to .exe binary file
 

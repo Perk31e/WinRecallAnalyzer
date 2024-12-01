@@ -1,4 +1,5 @@
 #image_loader.py
+
 from PySide6.QtWidgets import QDialog, QLabel, QScrollArea
 from PySide6.QtGui import QPixmap
 from PySide6.QtCore import QThread, Signal, Qt

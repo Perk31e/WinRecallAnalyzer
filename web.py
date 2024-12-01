@@ -1,5 +1,4 @@
-#web.py
-
+# web.py
 
 import shutil
 import sqlite3
@@ -34,8 +33,13 @@ def simplify_title(title):
     return re.sub(r"( - Chrome)$", "", title)
 
 class DetailDialog(QDialog):
-    def __init__(self, data, headers, parent=None):
-        super().__init__(parent)
+    def __init__(self, data, headers):
+        super().__init__
+        self.data = data
+        self.headers = headers
+
+        self.setup_ui()
+
         self.setWindowTitle("Properties")
         self.setFixedSize(500, 400)
 
@@ -62,45 +66,55 @@ class DetailDialog(QDialog):
         layout.addWidget(frame)
 
 class WebTableWidget(QWidget):
-    def __init__(self, db_path=""):
-        super().__init__()
-        self.db_path = db_path
+    def __init__(self, db_path=None, current_mode=None, parent=None):
+        super().__init__(parent)
+        self.db_path = db_path  # 부모로부터 전달받은 DB 경로
+        self.current_mode = current_mode  # 부모로부터 전달받은 모드
         self.history_db_path = None
         self.user_path = os.path.expanduser("~")
         self.history_folder = os.path.join(self.user_path, "Desktop", "History_load")
+
+        # UI 및 모델 초기화
         self.setup_ui()
+        self.setup_model()
 
-        # 필터링 및 정렬 모델 설정
-        self.proxy_model = QSortFilterProxyModel(self)
-        self.proxy_model.setFilterKeyColumn(1)  # Window Title 열 필터링
-        self.proxy_model.setFilterCaseSensitivity(Qt.CaseInsensitive)
-        self.table_view.setModel(self.proxy_model)
-        self.table_view.setSortingEnabled(True)  # 테이블 정렬 활성화
+        # 모드에 따른 초기화
+        if self.current_mode == 'target':
+            self.initialize_target_mode()
 
-        # 브라우저 키워드 목록 추가
-        self.browser_keywords = ["Chrome", "Firefox", "Edge", "Whale"]
-        self.filter_browser_data()
-
-        # 데이터베이스를 열기 전에 파일 복사 여부를 묻는 창 띄우기
-        reply = QMessageBox.question(self, "파일 복사", "브라우저 히스토리 및 ukg.db 파일을 바탕화면에 복사하시겠습니까?",
-                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-        self.copy_files = reply == QMessageBox.Yes
-        if self.copy_files:
-            self.copy_history_files()
-
-        # 데이터베이스 로드
+        # 데이터 로드
         if self.db_path:
             self.load_data()
 
+    def set_db_path(self, db_path):
+        """DB 경로 설정"""
+        if not db_path or not os.path.exists(db_path):
+            print("WebTable에서 잘못된 데이터베이스 경로가 전달되었습니다.")
+            return  # 잘못된 경로인 경우 로직 종료
+
+        print(f"WebTable에서 데이터베이스 경로가 설정되었습니다: {db_path}")
+
+        # DB 경로 저장
+        self.db_path = db_path
+
+        try:
+            # 데이터 로드 실행
+            self.load_data()
+        except Exception as e:
+            print(f"WebTable 데이터 로드 중 오류 발생: {e}")
+
+
     def setup_ui(self):
+        """UI 설정"""
         layout = QSplitter(Qt.Horizontal, self)
+
+        # 테이블 뷰
         self.table_view = QTableView()
         self.table_view.setSortingEnabled(True)
-        # 포커스 프레임 스타일 적용
-        self.table_view.setStyle(NoFocusFrameStyle())
+        self.table_view.setStyle(NoFocusFrameStyle())  # 포커스 프레임 스타일 적용
         layout.addWidget(self.table_view)
 
-        # 데이터 뷰어 추가
+        # 데이터 뷰어
         self.data_viewer = QTextEdit("데이터 프리뷰")
         self.data_viewer.setReadOnly(True)
         layout.addWidget(self.data_viewer)
@@ -109,77 +123,85 @@ class WebTableWidget(QWidget):
         main_layout.addWidget(layout)
         self.setLayout(main_layout)
 
+        # 클릭 이벤트 연결
         self.table_view.clicked.connect(self.display_related_history_data)
 
-    def filter_browser_data(self):
-        pattern = "|".join(self.browser_keywords)  # "Chrome|Firefox|Edge|Whale"
-        self.proxy_model.setFilterRegularExpression(pattern)
+    def setup_model(self):
+        """필터 및 ��렬 모델 설정"""
+        self.proxy_model = QSortFilterProxyModel(self)
+        self.proxy_model.setFilterKeyColumn(1)  # Window Title 열 필터링
+        self.proxy_model.setFilterCaseSensitivity(Qt.CaseInsensitive)
+        self.table_view.setModel(self.proxy_model)
 
-    def set_db_path(self, db_path):
-        self.db_path = db_path
-        self.load_data()
+        # 브라우저 키워드 설정
+        self.browser_keywords = ["Chrome", "Firefox", "Edge", "Whale"]
+        self.filter_browser_data()
 
-    def set_history_db_path(self, history_db_path):
-        self.history_db_path = history_db_path
-        print(f"새로운 히스토리 파일 경로가 설정되었습니다: {self.history_db_path}")
+    def initialize_target_mode(self):
+        """대상 PC 모드 초기화"""
+        reply = QMessageBox.question(
+            self,
+            "파일 복사",
+            "브라우저 히스토리 및 ukg.db 파일을 바탕화면에 복사하시겠습니까?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        if reply == QMessageBox.Yes:
+            self.copy_history_files()
 
     def load_data(self):
+        """테이블에 데이터를 로드하고 연관 데이터를 업데이트합니다."""
         if self.db_path:
             data, headers = load_web_data(self.db_path)
             if data:
-                # 연관 데이터 유/무를 표시하기 위해 데이터 수정
                 extended_data = []
                 for row in data:
                     title = row[1]  # 타이틀 열의 인덱스
-                    timestamp = row[2]  # TimeStamp가 있는 열의 인덱스
-                    has_related_data = self.check_related_data(timestamp, title)
-                    row = list(row)  # 튜플을 리스트로 변환
-                    row.append("O" if has_related_data else "X")  # "O" 또는 "X" 추가
-                    extended_data.append(row)
+                    timestamp = row[2]  # 타임스탬프 열의 인덱스
+                    extended_data.append(list(row) + ["X"])  # 초기 상태를 "X"로 설정
 
-                headers.append("Related Data")  # 새로운 열 헤더 추가
+                headers.append("Related Data")
                 model = SQLiteTableModel(extended_data, headers)
-                self.proxy_model.setSourceModel(model)  # proxy_model에 모델 설정
-                self.table_view.setModel(self.proxy_model)  # 정렬이 작동하도록 모델 설정
-
-                # 새로 추가된 열의 너비 조정
+                self.proxy_model.setSourceModel(model)
+                self.table_view.setModel(self.proxy_model)
                 self.table_view.resizeColumnToContents(len(headers) - 1)
+
+                # 히스토리 파일이 설정된 경우에만 연관 데이터 상태 업데이트
+                if self.history_db_path:
+                    self.update_related_data_status()
             else:
                 self.table_view.setModel(None)
 
-    def update_related_data_status(self):
-        model = self.table_view.model()
-        if not model:
-            return
+    def filter_browser_data(self):
+        """브라우저 관련 데이터 필터링"""
+        pattern = "|".join(self.browser_keywords)  # "Chrome|Firefox|Edge|Whale"
+        self.proxy_model.setFilterRegularExpression(pattern)
 
-        for row in range(model.rowCount()):
-            title = model.index(row, 1).data()
-            timestamp = model.index(row, 2).data()
-            related_data_exists = self.check_related_data(timestamp, title)
-            status = "O" if related_data_exists else "X"
-            model.setData(model.index(row, 3), status)
-
-        model.layoutChanged.emit()
+    def set_history_db_path(self, history_db_path):
+        """히스토리 파일 경로 설정"""
+        self.history_db_path = history_db_path
+        print(f"새로운 히스토리 파일 경로가 설정되었습니다: {self.history_db_path}")
 
     def check_related_data(self, timestamp_ukg, title_ukg):
+        """연관 데이터 확인 (히스토리 파일 기반)"""
         if not self.history_db_path or title_ukg is None or timestamp_ukg is None:
             return False
 
         conn = None
         try:
-            # Check if timestamp_ukg is a string and try to parse it correctly
+            # timestamp_ukg가 문자열일 경우 변환
             if isinstance(timestamp_ukg, str):
                 try:
-                    # Try to convert timestamp from string to float
                     timestamp_ukg = float(datetime.strptime(timestamp_ukg, "%Y-%m-%d %H:%M:%S").timestamp()) * 1000
                 except ValueError:
                     return False
 
+            # SQLite 연결 및 사용자 정의 REGEXP 함수 생성
             conn = sqlite3.connect(self.history_db_path)
             conn.create_function("REGEXP", 2, regexp)
             cursor = conn.cursor()
 
-            # Convert ukg.db timestamp to KST (seconds)
+            # ukg.db 타임스탬프를 KST로 변환
             try:
                 kst_time_ukg = datetime.fromtimestamp(timestamp_ukg / 1000, tz=timezone.utc).astimezone(
                     timezone(timedelta(hours=9))
@@ -188,14 +210,15 @@ class WebTableWidget(QWidget):
             except ValueError:
                 return False
 
-            # Simplify the Title: Remove " - Chrome" at the end
-            simplified_title = re.sub(r" - Chrome$", "", title_ukg)
+            # 타이틀 간소화 (접미사 제거)
+            simplified_title = re.sub(r" - (Chrome|Edge|Firefox|Whale)$", "", title_ukg)
 
-            # Query to fetch related data from the browser history
+            # 히스토리 데이터와 연관성 확인
             query = "SELECT title, last_visit_time FROM urls WHERE title REGEXP ?"
             cursor.execute(query, (simplified_title,))
             data = cursor.fetchall()
 
+            # 연관 데이터 검증
             for row in data:
                 chrome_title = row[0]
                 chrome_time = row[1]
@@ -204,6 +227,7 @@ class WebTableWidget(QWidget):
                 )
                 browser_unix_timestamp = int(kst_time_converted.timestamp())
 
+                # ±0초의 정확한 매칭만 허용
                 if chrome_title == simplified_title and browser_unix_timestamp == ukg_unix_timestamp:
                     return True
 
@@ -216,6 +240,33 @@ class WebTableWidget(QWidget):
             if conn:
                 conn.close()
 
+    def update_related_data_status(self):
+        """테이블의 각 행에 대해 연관 데이터를 확인하고 상태를 업데이트합니다."""
+        if not self.history_db_path:  # 히스토리 파일이 설정되지 않은 경우
+            print("히스토리 파일 경로가 설정되지 않았습니다. 연관 데이터 상태 업데이트를 건너뜁니다.")
+            return
+
+        model = self.table_view.model()
+        if not model:
+            print("테이블 모델이 초기화되지 않았습니다.")
+            return
+
+        for row in range(model.rowCount()):
+            # 타이틀과 타임스탬프 데이터를 가져옵니다.
+            title = model.index(row, 1).data()  # 타이틀 열 (1번째 열)
+            timestamp = model.index(row, 2).data()  # 타임스탬프 열 (2번째 열)
+
+            # 연관 데이터가 있는지 확인
+            related_data_exists = self.check_related_data(timestamp, title)
+
+            # 모델에 업데이트
+            status = "O" if related_data_exists else "X"
+            model.setData(model.index(row, model.columnCount() - 1), status)
+            print(f"행 {row}: Title={title}, Timestamp={timestamp}, Related Data={status}")
+
+        # 테이블 뷰를 새로고침하여 변경 사항 반영
+        model.layoutChanged.emit()
+
     def display_related_history_data(self, index):
         if not self.history_db_path:
             self.data_viewer.setText("히스토리 파일 경로가 설정되지 않았습니다.")
@@ -227,6 +278,7 @@ class WebTableWidget(QWidget):
             self.data_viewer.setText("선택된 타이틀 또는 타임스탬프가 비어 있습니다.")
             return
 
+        # Simplify the Title
         simplified_title = re.sub(r" - Chrome$", "", selected_title)
 
         try:
@@ -281,6 +333,7 @@ class WebTableWidget(QWidget):
                 conn.close()
 
     def show_detail_dialog(self, index):
+        """상세 정보 다이얼로그 표시"""
         row_data = []
         headers = []
 
@@ -294,6 +347,7 @@ class WebTableWidget(QWidget):
         detail_dialog.exec_()
 
     def copy_history_files(self):
+        """브라우저 히스토리 및 ukg.db 파일 복사"""
         history_paths = {
             "Chrome": os.path.join(self.user_path, r"AppData\Local\Google\Chrome\User Data\Default\History"),
             "Firefox": os.path.join(self.user_path, r"AppData\Roaming\Mozilla\Firefox\Profiles", "default-release",
