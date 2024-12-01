@@ -59,9 +59,10 @@ class MainWindow(QMainWindow):
         open_file_action.triggered.connect(self.open_file_dialog)
         file_menu.addAction(open_file_action)
 
-        # "히스토리 파일 열기" 메뉴 항목 추가
+        # "히스토리 파일 열기" 메뉴 항목을 open_additional_files_dialog로 변경
         open_history_action = QAction("히스토리 파일 열기", self)
-        open_history_action.triggered.connect(self.open_history_file_dialog)
+        open_history_action.triggered.connect(
+            self.open_additional_files_dialog)  # open_history_file_dialog -> open_additional_files_dialog로 변경
         file_menu.addAction(open_history_action)
 
         # "SRUM 열기" 메뉴 항목 추가
@@ -180,16 +181,19 @@ class MainWindow(QMainWindow):
             print("분석 모드에서 데이터 복사를 건너뜁니다.")
             return  # 분석 모드에서는 복사 기능 비활성화
 
+        # 브라우저 히스토리 파일 복사
         try:
-            # 대상 PC의 브라우저 히스토리 파일 복사
-            from web import copy_history_files
-            copy_history_files()
-            print("브라우저 히스토리 파일 복사 완료")
+            if hasattr(self.web_table_tab, 'copy_history_files') and self.web_table_tab:
+                print("copy_history_files 호출 시작...")
+                self.web_table_tab.copy_history_files()  # WebTableWidget의 copy_history_files 호출
+                print("브라우저 히스토리 파일 복사 완료")
+            else:
+                print("WebTableWidget이 초기화되지 않았거나 copy_history_files 함수가 존재하지 않습니다.")
         except Exception as e:
             print(f"브라우저 히스토리 파일 복사 중 오류 발생: {e}")
 
+        # SRUM 및 SOFTWARE 파일 복사
         try:
-            # 대상 PC의 SRUM 및 SOFTWARE 파일 복사
             from app_table import AppTableWidget
             widget = AppTableWidget()
             widget.current_mode = self.current_mode  # 모드 전달
@@ -197,6 +201,23 @@ class MainWindow(QMainWindow):
             print("SRUDB.dat 및 SOFTWARE 파일 복사 완료")
         except Exception as e:
             print(f"SRUM 및 SOFTWARE 파일 복사 중 오류 발생: {e}")
+
+        # ukg.db 파일 복사
+        desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
+        output_dir = os.path.join(desktop_path, "AppTable_data")
+        os.makedirs(output_dir, exist_ok=True)
+
+        try:
+            ukg_db_source = os.path.join(desktop_path, "UKP", "{E158B942-96B3-494E-AC1F-D2656EEF1C4C}", "ukg.db")
+            ukg_db_destination = os.path.join(output_dir, "ukg.db")
+
+            if os.path.exists(ukg_db_source):
+                shutil.copyfile(ukg_db_source, ukg_db_destination)
+                print(f"ukg.db 파일 복사 완료: {ukg_db_destination}")
+            else:
+                print("ukg.db 파일을 찾을 수 없습니다.")
+        except Exception as e:
+            print(f"ukg.db 파일 복사 중 오류 발생: {e}")
 
     def open_srum_files_dialog(self):
         """SRUM 파일과 SOFTWARE 파일을 선택하도록 하는 다이얼로그"""
@@ -514,8 +535,9 @@ class MainWindow(QMainWindow):
             if hasattr(self.recovery_table_tab, 'set_db_paths'):
                 self.recovery_table_tab.set_db_paths(db_path, recovered_wal_db)
 
-            # ukg.db 선택 이후 다른 파일 선택 진행
-            self.open_additional_files_dialog()
+            # **대상 PC 모드에서는 후속 파일 선택을 건너뛰고 바로 복사 작업만 진행**
+            if self.current_mode == 'analysis':
+                self.open_additional_files_dialog()
         else:
             QMessageBox.warning(self, "파일 선택 취소", "ukg.db 파일이 선택되지 않았습니다.")
 
@@ -610,23 +632,6 @@ class MainWindow(QMainWindow):
                 print(f"AppTable 탭에 SRUM 데이터를 전달하는 중 오류 발생: {e}")
         else:
             print("AppTable 탭이 초기화되지 않았습니다.")
-
-    def open_history_file_dialog(self):
-        """히스토리 파일 선택 다이얼로그 (확장자 제한 없음)"""
-        # 기존 파일 선택 다이얼로그 대신, 모든 파일 필터 사용
-        file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "히스토리 파일 선택",
-            os.path.expanduser("~"),
-            "All Files (*);;SQLite Files (*.sqlite *.db)"
-        )
-        if file_path:
-            self.history_db_path = file_path
-            print(f"선택된 히스토리 파일 경로: {self.history_db_path}")
-            if hasattr(self, 'set_history_db_path'):
-                self.set_history_db_path(file_path)
-        else:
-            print("히스토리 파일이 선택되지 않았습니다.")
 
     def update_image_display(self, selected, deselected):
         for index in selected.indexes():
