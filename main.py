@@ -50,6 +50,8 @@ class MainWindow(QMainWindow):
         # 모드 선택 (새로운 로직 추가)
         self.setup_mode()
 
+
+
         # 상단 메뉴바 생성
         self.menu_bar = self.menuBar()
         file_menu = self.menu_bar.addMenu("파일")
@@ -152,23 +154,27 @@ class MainWindow(QMainWindow):
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.Yes
         )
-
+        print(f"QMessageBox 반환값: {reply}")  # 디버깅 추가
         if reply == QMessageBox.Yes:
             self.current_mode = 'target'
+            print("사용자가 Yes를 눌렀습니다. current_mode = 'target'")  # 디버깅 추가
         else:
             self.current_mode = 'analysis'
+            print("사용자가 No를 눌렀습니다. current_mode = 'analysis'")  # 디버깅 추가
 
     def initialize_mode(self):
         """모드에 따라 초기화 작업 수행"""
+        print(f"initialize_mode 호출됨. current_mode = {self.current_mode}")  # 디버깅 추가
         if self.current_mode == 'target':
+            print("initialize_target_mode 호출 예정")  # 디버깅 추가
             self.initialize_target_mode()
         elif self.current_mode == 'analysis':
+            print("initialize_analysis_mode 호출 예정")  # 디버깅 추가
             self.initialize_analysis_mode()
 
     def initialize_target_mode(self):
         """대상 PC 모드 초기화"""
         self.collect_files()  # 데이터 복사
-        self.parse_files()  # 복사된 파일 파싱
         self.statusBar().showMessage("대상 PC 모드로 초기화 완료.")
 
     def initialize_analysis_mode(self):
@@ -316,37 +322,13 @@ class MainWindow(QMainWindow):
         #NoFocusFrameStyle 적용
         self.table_view.setStyle(NoFocusFrameStyle())
 
+        self.initialize_mode()
+
     def setup_file_table_tab(self):
         self.file_table_tab = FileTableWidget()
         self.tab_widget.addTab(self.file_table_tab, "FileTable")
         if self.db_path:
             self.file_table_tab.set_db_path(self.db_path)
-
-    def parse_files(self):
-        """파일 파싱 로직"""
-        if self.current_mode == 'target':
-            # 대상 PC 모드: 복사된 파일 사용
-            desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
-            app_table_data_path = os.path.join(desktop_path, "AppTable_data")
-            self.srudb_path = os.path.join(app_table_data_path, "SRUDB.dat")
-            self.software_path = os.path.join(app_table_data_path, "SOFTWARE")
-
-            # SRUM 파일 경로 확인 후 파싱
-            if os.path.exists(self.srudb_path) and os.path.exists(self.software_path):
-                print("대상 PC 모드에서 SRUM 파싱 실행...")
-                self.run_srum_parsing(self.srudb_path, self.software_path, app_table_data_path)
-            else:
-                print("대상 PC 모드에서 SRUM 파일이 없어 파싱을 건너뜁니다.")
-
-        elif self.current_mode == 'analysis':
-            # 분석 모드: 사용자 지정 파일만 처리
-            if not self.srudb_path or not self.software_path:
-                print("분석 모드에서 SRUM 파일이 지정되지 않아 파싱을 건너뜁니다.")
-                return
-
-            # SRUM 파일 경로 확인 후 파싱
-            print("분석 모드에서 SRUM 파싱 실행...")
-            self.run_srum_parsing(self.srudb_path, self.software_path, os.path.dirname(self.srudb_path))
 
     def analyze_srum_data_for_analysis_mode(self):
         """분석 PC 모드 전용 SRUM 데이터 처리"""
