@@ -125,6 +125,33 @@ class MainWindow(QMainWindow):
         except ImportError:
             print("AppTableWidget 모듈을 불러오지 못했습니다.")
 
+    def setup_file_table_tab(self):
+        """FileTable 탭 초기화"""
+        self.file_table_tab = FileTableWidget()
+        self.tab_widget.addTab(self.file_table_tab, "FileTable")
+        if self.db_path:
+            self.file_table_tab.set_db_path(self.db_path)
+
+    def setup_recovery_table_tab(self):
+        """RecoveryTable 탭 초기화"""
+        self.recovery_table_tab = RecoveryTableWidget()
+        self.tab_widget.addTab(self.recovery_table_tab, "RecoveryTable")
+
+    def setup_internal_audit_tab(self):
+        """Internal Audit 탭 초기화"""
+        try:
+            from Internal_Audit import InternalAuditWidget
+            self.internal_audit_tab = InternalAuditWidget()
+            self.tab_widget.addTab(self.internal_audit_tab, "InternalAudit")
+            if self.db_path:
+                print(f"[Main] InternalAuditWidget에 db_path 설정: {self.db_path}")
+                self.internal_audit_tab.set_db_path(self.db_path)
+            else:
+                print("[Main] db_path가 설정되지 않았습니다.")
+        except ImportError as e :
+            print(f"InternalAuditWidget 초기화 중 오류 발생: {e}")
+            self.internal_audit_tab = None
+
     def on_tab_changed(self, index):
         """탭 변경 시 이벤트 처리"""
         tab_name = self.tab_widget.tabText(index)
@@ -358,8 +385,10 @@ class MainWindow(QMainWindow):
         self.all_table_tab.setLayout(self.all_table_layout)
         self.tab_widget.addTab(self.all_table_tab, "AllTable")
 
-        # 기타 탭 추가
+        # 이미지 테이블 탭 추가
         self.setup_image_table_tab()
+
+        # 앱 테이블 탭 추가
         self.setup_app_table_tab()
 
         # 웹 테이블 탭 추가
@@ -369,13 +398,11 @@ class MainWindow(QMainWindow):
         # 파일 테이블 탭 추가
         self.setup_file_table_tab()
 
-        #리커버리 테이블 탭 추가
-        self.recovery_table_tab = RecoveryTableWidget()
-        self.tab_widget.addTab(self.recovery_table_tab, "RecoveryTable")
+        # 리커버리 테이블 탭 추가
+        self.setup_recovery_table_tab()
 
-        # Internal Audit 탭 추가
-        self.internal_audit_tab = InternalAuditWidget()
-        self.tab_widget.addTab(self.internal_audit_tab, "InternalAudit")
+        # 내부 감사 탭 추가
+        self.setup_internal_audit_tab()
 
         # 상태 표시줄 추가
         self.status_bar = QStatusBar()
@@ -393,12 +420,6 @@ class MainWindow(QMainWindow):
         self.table_view.setStyle(NoFocusFrameStyle())
 
         self.initialize_mode()
-
-    def setup_file_table_tab(self):
-        self.file_table_tab = FileTableWidget()
-        self.tab_widget.addTab(self.file_table_tab, "FileTable")
-        if self.db_path:
-            self.file_table_tab.set_db_path(self.db_path)
 
     def analyze_srum_data(self):
         """SRUM 데이터 분석"""
@@ -561,6 +582,8 @@ class MainWindow(QMainWindow):
                 self.web_table_tab.set_db_path(self.db_path)  # self.db_path 사용
             if hasattr(self.recovery_table_tab, 'set_db_paths'):
                 self.recovery_table_tab.set_db_paths(db_path, recovered_wal_db)
+            if hasattr(self.internal_audit_tab, 'set_db_path'):
+                self.internal_audit_tab.set_db_path(self.db_path)
 
             # **히스토리 파일 경로 설정 및 관련 데이터 갱신**: ukg.db 파일 선택 후 실행
             try:
