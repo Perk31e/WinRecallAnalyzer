@@ -2,7 +2,7 @@
 
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QTableView, QLabel
 from PySide6.QtCore import Qt, QThread, Signal
-from database import SQLiteTableModel
+from database import SQLiteTableModel, load_recovery_data_from_db
 from no_focus_frame_style import NoFocusFrameStyle
 import subprocess
 import sys
@@ -25,27 +25,6 @@ class RecoveryThread(QThread):
 
     def run(self):
         try:
-            # 원본 데이터베이스에 연결
-            conn = sqlite3.connect(self.original_db)
-            cursor = conn.cursor()
-
-            # 2. WindowCapture 테이블의 가장 낮은 Id 값 확인
-            cursor.execute("SELECT MIN(Id) FROM WindowCapture;")
-            window_capture_min_id_row = cursor.fetchone()
-            if not window_capture_min_id_row or window_capture_min_id_row[0] is None:
-                self.recovery_error.emit("WindowCapture 테이블에서 최소 Id를 가져올 수 없습니다.")
-                conn.close()
-                return
-            window_capture_min_id = window_capture_min_id_row[0]
-            if window_capture_min_id <= 8:
-                self.recovery_info.emit(f"WindowCapture 테이블의 최소 Id가 8 이하입니다: {window_capture_min_id}\n삭제된 레코드가 없어서 복구할 것이 없습니다.")
-                conn.close()
-                return
-
-            conn.close()  # 원본 DB 연결 종료
-
-            # 조건을 모두 만족하므로 복구 스크립트 실행
-
             # parse_recovery.py 실행
             cmd_recovery = [sys.executable, self.parse_recovery_path, self.original_db, self.recovered_db]
             result_recovery = subprocess.run(cmd_recovery, capture_output=True, text=True)
@@ -54,7 +33,7 @@ class RecoveryThread(QThread):
                 self.recovery_error.emit(f"parse_recovery.py 오류: {result_recovery.stderr}")
                 return
 
-            # parse_process.py 실
+            # parse_process.py 실행
             cmd_process = [sys.executable, self.parse_process_path, self.recovered_db]
             result_process = subprocess.run(cmd_process, capture_output=True, text=True)
             process_output = result_process.stdout + "\n" + result_process.stderr
@@ -71,10 +50,6 @@ class RecoveryThread(QThread):
             self.recovery_error.emit(f"복구 스크립트 실행 중 예외 발생: {e}")
 
 class RecoveryTableWidget(QWidget):
-    # Signal 추가
-    recovery_info = Signal(str)   # 정보 메시지 전달
-    recovery_error = Signal(str)  # 오류 메시지 전달
-
     def __init__(self, parent=None):
         super().__init__(parent)
         self.original_db_path = ""
@@ -82,9 +57,9 @@ class RecoveryTableWidget(QWidget):
         self.thread = None
         self.setup_ui()
         
-        # Signal 연결
-        self.recovery_info.connect(self.on_recovery_info)
-        self.recovery_error.connect(self.on_recovery_error)
+        # 기존의 self 시그널 연결 제거
+        # self.recovery_info.connect(self.on_recovery_info)
+        # self.recovery_error.connect(self.on_recovery_error)
 
     def setup_ui(self):
         layout = QVBoxLayout(self)
@@ -118,43 +93,164 @@ class RecoveryTableWidget(QWidget):
     def set_db_paths(self, original_db_path, recovered_db_path):
         try:
             print(f"\nRecovery 프로세스 시작: {recovered_db_path}")
+            '''
+            1. WindowCapture 테이블 확인
+                - 데이터베이스의 WindowCapture 테이블을 검사
+                - 삭제된 레코드가 있는지 확인
+                - 복구가 필요한지 판단
+            '''
+            print("\n[1단계] WindowCapture 테이블 확인")
+            print(f"확인할 DB 파일 경로: {recovered_db_path}")
+            conn = sqlite3.connect(recovered_db_path)
+            cursor = conn.cursor()
+
+            # 테이블 존재 여부 확인
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='WindowCapture'")
+            if cursor.fetchone() is None:
+                print(f"현재 DB에 존재하는 테이블 목록:")
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                tables = cursor.fetchall()
+                for table in tables:
+                    print(f"- {table[0]}")
+
+            # 최소값과 최대값 조회
+            cursor.execute("SELECT MIN(Id), MAX(Id) FROM WindowCapture;")
+            window_capture_row = cursor.fetchone()
+            window_capture_min_id = window_capture_row[0]
+            window_capture_max_id = window_capture_row[1]
+
+            # IdTable의 NextId 값 조회
+            cursor.execute("SELECT NextId FROM IdTable;")
+            id_table_row = cursor.fetchone()
+            id_table_next_id = id_table_row[0] if id_table_row else None
+
+            if not window_capture_row or window_capture_min_id is None:
+                self.on_recovery_error("WindowCapture 테이블에서 최소 Id를 가져올 수 없습니다.")
+                conn.close()
+                return
+
+            if window_capture_min_id <= 8:
+                self.on_recovery_info(
+                    f"WindowCapture 테이블의 최소 Id 및 최대 Id는 다음과 같습니다: {window_capture_min_id}, {window_capture_max_id}\n"
+                    f"IdTable 테이블의 NextId 값: {id_table_next_id}\n"
+                    "삭제된 레코드가 없어서 복구할 것이 없습니다."
+                )
+                conn.close()
+                return
+
+            conn.close()
+            '''
+            2. 복구 준비 작업
+                - Recover_Output 디렉토리 설정
+                - 기존 파일 정리
+                - 복구 준비 작업 수행
+            '''
+            print("\n[2단계] 복구 준비 작업")
             
+            # Recover_Output 디렉토리 설정
             recover_output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Recover_Output")
             if not os.path.exists(recover_output_dir):
                 os.makedirs(recover_output_dir)
             
-            self.original_db_path = recovered_db_path
+            # 기존 파일들의 연결을 닫고 삭제
+            self.table_view.setModel(None)  # 테이블 모델 연결 해제
+            if hasattr(self, 'conn') and self.conn:
+                self.conn.close()
+            
+            # recovered_with_sqlite_recovery.db 파일이 존재하면 삭제
             self.recovered_db_path = os.path.join(recover_output_dir, "recovered_with_sqlite_recovery.db")
-
-            # 1. SQLite Recovery 실행
-            print("\n[1단계] SQLite Recovery 실행")
+            if os.path.exists(self.recovered_db_path):
+                try:
+                    os.remove(self.recovered_db_path)
+                    print(f"기존 recovered_with_sqlite_recovery.db 파일을 삭제했습니다.")
+                except Exception as e:
+                    print(f"파일 삭제 중 오류 발생: {e}")
+                
+            # remained.db-wal 파일 경로 설정
+            remained_wal = os.path.join(recover_output_dir, "remained.db-wal")
+            
+            # Recover_Output 디렉토리에서 remained.db-wal 파일 확인
+            if not os.path.exists(remained_wal):
+                print(f"WAL 파일을 찾을 수 없습니다: {remained_wal}")
+            else:
+                print(f"WAL 파일을 찾았습니다: {remained_wal}")
+            
+            # 경로 설정
+            self.original_db_path = os.path.join(recover_output_dir, "recovered_with_wal.db")
+            self.recovered_db_path = os.path.join(recover_output_dir, "recovered_with_sqlite_recovery.db")
+            
+            # 원본 DB 파일을 recovered_with_wal.db로 복사
+            shutil.copy2(original_db_path, self.original_db_path)
+            print(f"원본 DB를 복사했습니다: {self.original_db_path}")
+            
+            '''
+            3. WAL 복구 실행 전 DB 연결 닫기
+                - parse_recover.py 수행
+                - 실제 SQLite 복구 작업 수행
+                - 삭제된 레코드 복구 (lost and found 테이블 생성됨)
+            '''
+            print("\n[3단계] SQLite Recovery 실행")
+            if hasattr(self, 'conn') and self.conn:
+                self.conn.close()
+                print("기존 DB 연결을 닫았습니다.")
+            
             current_dir = os.path.dirname(os.path.abspath(__file__))
             recovery_path = os.path.join(current_dir, "parse_recovery.py")
-            result = subprocess.run(
-                [sys.executable, recovery_path, self.original_db_path, self.recovered_db_path],
-                check=True, capture_output=True, text=True
-            )
-            print(result.stdout)
+            try:
+                result = subprocess.run(
+                    [sys.executable, recovery_path, self.original_db_path, self.recovered_db_path],
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+                print(result.stdout)
+            except subprocess.CalledProcessError as e:
+                print(f"parse_recovery.py 실행 중 오류:\n출력: {e.stdout}\n오류: {e.stderr}")
+                raise
             
-            # 2. Process 실행 (re_WindowCapture 테이블 생성)
-            print("\n[2단계] Process 실행")
+            '''
+            4. Process 실행
+                - parse_process.py 수행
+                - re_WindowCapture 테이블 생성
+                - 생성된 lost and found 테이블에서 windowcapture 레코드를 추출하여 re_windowcapture 테이블에 저장
+            '''
+            print("\n[4단계] Process 실행")
             process_path = os.path.join(current_dir, "parse_process.py")
-            result = subprocess.run(
-                [sys.executable, process_path, self.recovered_db_path],
-                check=True, capture_output=True, text=True
-            )
-            print(result.stdout)
+            try:
+                result = subprocess.run(
+                    [sys.executable, process_path, self.recovered_db_path],
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+                print(result.stdout)
+            except subprocess.CalledProcessError as e:
+                print(f"parse_process.py 실행 중 오류:\n출력: {e.stdout}\n오류: {e.stderr}")
+                raise
+
+            '''
+            5. WAL 복구 실행
+                - recovery-wal-app-gui.py 수행
+                - WAL 파일에서 데이터 복구
+            '''
+            print("\n[5단계] WAL 복구 실행")
+            if hasattr(self, 'conn') and self.conn:
+                self.conn.close()
+                print("기존 DB 연결을 닫았습니다.")
             
-            # 3. WAL 복구 실행
-            print("\n[3단계] WAL 복구 실행")
-            recovery_wal_path = os.path.join(current_dir, "recovery-wal-app-gui.py")
+            recovery_wal_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "recovery-wal-app-gui.py")
             result = subprocess.run(
                 [sys.executable, recovery_wal_path, self.original_db_path],
                 check=True, capture_output=True, text=True
             )
             print(result.stdout)
-            
-            # 4. WAL DB에서 테이블 복사
+
+            ''' 
+            6. WAL DB에서 테이블 복사
+                - 복구된 데이터베이스에서 테이블 복사
+                - re_App, re_Web, re_WindowCaptureAppRelation, re_WindowCaptureWebRelation 테이블 복사
+            '''
+            print("\n[6단계] WAL DB에서 테이블 복사")
             wal_path = os.path.join(recover_output_dir, "recovered_with_wal.db")
             if os.path.exists(wal_path):
                 wal_conn = sqlite3.connect(wal_path)
@@ -230,10 +326,19 @@ class RecoveryTableWidget(QWidget):
                     print(f"WindowCaptureWebRelation 테이블 복사 완료: {len(web_relation_data)}개 레코드")
                     
                     recovery_conn.commit()
+                    print("테이블 복사 작업이 완료되었습니다.")
                 finally:
                     wal_conn.close()
                     recovery_conn.close()
 
+            '''
+            7. 복구 완료 메시지 표시
+                - 복구 결과 확인
+                - 결과 메시지 표시
+                - 복구된 데이터 로드
+            '''
+            print("\n[7단계] 복구 ���료 ��시지 표시")
+            self.on_recovery_info("복구 스크립트가 성공적으로 실행되었습니다.")
             self.load_recovery_data()
 
         except Exception as e:
@@ -251,7 +356,7 @@ class RecoveryTableWidget(QWidget):
         self.info_label.show()
         self.error_label.hide()
 
-        # 성공적으로 스크립트가 실행된 경우, 복구 데이터를 로드합니다.
+        # 성공적으로 스크립트가 실행된 경우, 복구 데이터를 드합니다.
         if "성공적으로 실행되었습니다" in message:
             self.load_recovery_data()
 
@@ -266,71 +371,32 @@ class RecoveryTableWidget(QWidget):
 
     def load_recovery_data(self):
         try:
-            conn = sqlite3.connect(self.recovered_db_path)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-
-            query = """
-            SELECT 
-                r.Id, 
-                r.Name, 
-                r.WindowTitle,
-                COALESCE(a.Name, ' 이름 없음 (' || rel.AppId || ')') as AppName,
-                COALESCE(w.Uri, '') as Uri,
-                CASE 
-                    WHEN r.TimeStamp IS NOT NULL 
-                    THEN datetime(CAST(CAST(r.TimeStamp AS INTEGER) / 1000 AS INTEGER), 'unixepoch', 'localtime') || '.' ||
-                         substr(CAST(CAST(r.TimeStamp AS INTEGER) % 1000 AS TEXT) || '000', 1, 3)
-                END as TimeStamp,
-                'X' as 이미지
-            FROM re_WindowCapture r
-            LEFT JOIN re_WindowCaptureAppRelation rel ON r.Id = rel.WindowCaptureId
-            LEFT JOIN re_App a ON rel.AppId = a.Id
-            LEFT JOIN re_WindowCaptureWebRelation wrel ON r.Id = wrel.WindowCaptureId
-            LEFT JOIN re_Web w ON wrel.WebId = w.Id
-            ORDER BY r.Id;
-            """
-
-            cursor.execute(query)
-            data = cursor.fetchall()
+            # database.py의 load_recovery_data_from_db 함수 사용
+            data, headers = load_recovery_data_from_db(self.recovered_db_path)
             
-            if data:
-                headers = ["Id", "Name", "WindowTitle", "AppName", "Uri", "TimeStamp", "이미지"]
-                formatted_data = []
-                for row in data:
-                    row_dict = dict(row)
-                    formatted_data.append((
-                        row_dict['Id'],
-                        row_dict['Name'],
-                        row_dict['WindowTitle'],
-                        row_dict['AppName'],
-                        row_dict['Uri'],
-                        row_dict['TimeStamp'],
-                        row_dict['이미지']
-                    ))
-
-                model = SQLiteTableModel(formatted_data, headers)
+            if data and headers:
+                # SQLiteTableModel에 데이터와 헤더 전달
+                model = SQLiteTableModel(data, headers)
                 self.table_view.setModel(model)
-                self.table_view.resizeColumnsToContents()
-                return True
+                
+                # 레코드 수 확인
+                print(f"\n데이터베이스 경로: {self.recovered_db_path}")
+                print(f"쿼리 결과 레코드 수: {len(data)}")
+                
+                # 첫 번째 레코드 내용 출력
+                if data:
+                    print("\n첫 번째 레코드 내용:")
+                    for i, header in enumerate(headers):
+                        print(f"{header}: {data[0][i]}")
             else:
-                self.error_label.setText("복구된 데이터가 없습니다.")
+                self.error_label.setText("데이터를 불러올 수 없습니다.")
                 self.error_label.show()
-                return False
 
-        except sqlite3.Error as e:
-            print(f"SQLite 오류: {e}")
-            self.error_label.setText(f"데이터 로드 오류: {e}")
-            self.error_label.show()
-            return False
         except Exception as e:
-            print(f"일반 오류: {e}")
-            self.error_label.setText(f"데이터 로드 오류: {e}")
+            error_msg = f"데이터 로드 중 예외 발생: {e}"
+            print(f"\n오류: {error_msg}")
+            self.error_label.setText(error_msg)
             self.error_label.show()
-            return False
-        finally:
-            if 'conn' in locals():
-                conn.close()
 
     def run_wal_recovery(self, recovery_wal_path):
         """WAL 복구 스크립를 실행합니다."""
@@ -338,9 +404,7 @@ class RecoveryTableWidget(QWidget):
             print(f"WAL 복구 시작: {self.original_db_path}")  # 디버깅을 위한 로그 추가
             result = subprocess.run(
                 [sys.executable, recovery_wal_path, self.original_db_path], 
-                check=True,
-                capture_output=True,
-                text=True
+                check=True, capture_output=True, text=True
             )
             print(result.stdout)  # 표준 출력 내용 출력
             print("WAL 복구가 완료되었습니다.")

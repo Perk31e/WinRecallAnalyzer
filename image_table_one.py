@@ -42,16 +42,18 @@ class ImageTableWidget(QWidget):
         # --- 타임스탬프 및 검색 위젯 그룹 ---
         search_group = QHBoxLayout()
 
-        # 시작 시간 설정
+        # 시작 시간 설정 (기본값으로 현재 시간 대신 빈 값 설정)
         search_group.addWidget(QLabel("시작 시간:"))
-        self.start_time = QDateTimeEdit(QDateTime.currentDateTime())
+        self.start_time = QDateTimeEdit()
         self.start_time.setDisplayFormat("yyyy-MM-dd HH:mm:ss")
+        self.start_time.setMinimumWidth(180)
         search_group.addWidget(self.start_time)
 
-        # 종료 시간 설정
+        # 종료 시간 설정 (기본값으로 현재 시간 대신 빈 값 설정)
         search_group.addWidget(QLabel("종료 시간:"))
-        self.end_time = QDateTimeEdit(QDateTime.currentDateTime())
+        self.end_time = QDateTimeEdit()
         self.end_time.setDisplayFormat("yyyy-MM-dd HH:mm:ss")
+        self.end_time.setMinimumWidth(180)
         search_group.addWidget(self.end_time)
 
         # 키워드 입력 박스 추가
@@ -101,10 +103,23 @@ class ImageTableWidget(QWidget):
         # 그룹 간 간격 조절을 위한 Stretch 추가
         auto_move_group.addStretch()
 
-        # Control 레이아웃에 그룹 추가
+        # --- 현재 이미지 타임스탬프 레이블 추가 ---
+        self.current_timestamp_label = QLabel()
+        self.current_timestamp_label.setStyleSheet("""
+            QLabel {
+                font-size: 14pt;
+                font-weight: bold;
+                color: #333333;
+            }
+        """)
+        self.current_timestamp_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.current_timestamp_label.setMinimumWidth(250)  # 타임스탬프가 잘리지 않도록 충분한 너비 확보
+
+        # Control 레이아웃에 그룹 추가 (기존 코드 수정)
         control_layout.addLayout(search_group)
         control_layout.addSpacing(20)  # 그룹 간 간격
         control_layout.addLayout(auto_move_group)
+        control_layout.addWidget(self.current_timestamp_label)  # 타임스탬프 레이블 추가
 
         # Control 레이아웃에 Stretch 추가
         control_layout.addStretch()
@@ -187,7 +202,8 @@ class ImageTableWidget(QWidget):
     def set_db_path(self, db_path):
         """db_path 설정 및 이미지 로드"""
         self.db_path = db_path
-        self.load_images()  # db_path 설정 후 이미지 로드 메서드 호출
+        self.set_default_time_range()  # 시간 범위 초기화 후
+        self.load_images()  # 이미지 로드
 
     def load_images(self):
         """ImageToken이 NULL이 아닌 모든 이미지 로드"""
@@ -359,10 +375,13 @@ class ImageTableWidget(QWidget):
             if self.current_image_index < len(self.images):
                 timestamp = self.get_timestamp(self.images[self.current_image_index][0])
                 self.image_display.setToolTip(f"TimeStamp: {timestamp}")
+                self.current_timestamp_label.setText(f"이미지 시각: {timestamp}")
             else:
                 self.image_display.setToolTip("TimeStamp: N/A")
+                self.current_timestamp_label.setText("이미지 시각: N/A")
         else:
             self.image_display.setText("이미지를 로드할 수 없습니다.")
+            self.current_timestamp_label.setText("이미지 시각: N/A")
             print("이미지 로드 실패")
         self.update_button_state()
 
@@ -373,7 +392,7 @@ class ImageTableWidget(QWidget):
             dt = datetime.fromtimestamp(timestamp_sec)
             return dt.strftime('%Y-%m-%d %H:%M:%S')
         except Exception as e:
-            print(f"타임스탬프 변환 오류: {e}")
+            print(f"임스탬프 변환 오류: {e}")
             return "N/A"
 
     def show_previous_image(self):

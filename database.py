@@ -230,81 +230,52 @@ def convert_timestamp(browser, timestamp):
     else:
         return None  # 다른 브라우저가 있을 경우 추가 변환 함수 필요
 
-
-def load_recovery_data(db_path):
+def load_recovery_data_from_db(db_path):
     """
-    re_WindowCapture 테이블과 App 관련 테이블에서 데이터를 불러와 반환합니다.
-
+    복구된 데이터베이스에서 WindowCapture 관련 데이터를 불러와 반환합니다.
+    
     Args:
         db_path: 복구된 데이터베이스 파일 경로
-
+        
     Returns:
         tuple: (데이터 리스트, 헤더 리스트) 또는 오류 시 (None, None)
     """
     try:
-        # Recover_Output 디렉토리 경로 설정
-        output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Recover_Output")
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
 
-        # recovered_with_sqlite_recovery.db 연결
-        recovery_conn = sqlite3.connect(db_path)
-        cursor = recovery_conn.cursor()
-
-        # recovered_with_wal.db 경로 설정
-        wal_path = os.path.join(output_dir, "recovered_with_wal.db")
-
-        if os.path.exists(wal_path):
-            print(f"WAL DB 파일 발견: {wal_path}")
-            # WAL DB가 있는 경우 ATTACH하고 App 정보를 포함하여 조회
-            recovery_conn.execute(f"ATTACH DATABASE '{wal_path}' AS wal_db")
-            query = """
-            SELECT 
-                r.Id, 
-                r.Name, 
-                r.WindowTitle,
-                COALESCE(a.Name, '') as AppName,
-                r.TimeStamp,
-                'X' as 이미지
-            FROM re_WindowCapture r
-            LEFT JOIN wal_db.WindowCaptureAppRelation w ON r.Id = w.WindowCaptureId
-            LEFT JOIN wal_db.App a ON w.AppId = a.Id
-            ORDER BY r.Id;
-            """
-        else:
-            print(f"WAL DB 파일 없음: {wal_path}")
-            # WAL DB가 없는 경우 기본 정보만 조회
-            query = """
-            SELECT 
-                Id, 
-                Name, 
-                WindowTitle,
-                '' as AppName,
-                TimeStamp,
-                'X' as 이미지
-            FROM re_WindowCapture
-            ORDER BY Id;
-            """
-
+        query = """
+        SELECT 
+            r.Id, 
+            r.Name, 
+            r.WindowTitle,
+            COALESCE(a.Name, ' 이름 없음 (' || rel.AppId || ')') as AppName,
+            COALESCE(w.Uri, '') as Uri,
+            CASE 
+                WHEN r.TimeStamp IS NOT NULL 
+                THEN datetime(CAST(CAST(r.TimeStamp AS INTEGER) / 1000 AS INTEGER), 'unixepoch', 'localtime') || '.' ||
+                     substr(CAST(CAST(r.TimeStamp AS INTEGER) % 1000 AS TEXT) || '000', 1, 3)
+            END as TimeStamp
+        FROM re_WindowCapture r
+        LEFT JOIN re_WindowCaptureAppRelation rel ON r.Id = rel.WindowCaptureId
+        LEFT JOIN re_App a ON rel.AppId = a.Id
+        LEFT JOIN re_WindowCaptureWebRelation wrel ON r.Id = wrel.WindowCaptureId
+        LEFT JOIN re_Web w ON wrel.WebId = w.Id
+        ORDER BY r.Id;
+        """
+        
         cursor.execute(query)
         data = cursor.fetchall()
-        headers = ["Id", "Name", "WindowTitle", "AppName", "TimeStamp", "이미지"]
+        headers = ["Id", "Name", "WindowTitle", "AppName", "Uri", "TimeStamp"]
 
-        # TimeStamp 변환 처리
-        converted_data = []
-        for row in data:
-            row = list(row)
-            if row[4]:  # TimeStamp가 있는 경우 변환
-                row[4] = convert_unix_timestamp(row[4])
-            converted_data.append(row)
-
-        return converted_data, headers
+        return data, headers
 
     except sqlite3.Error as e:
         print(f"복구 데이터 로드 오류: {e}")
         return None, None
     finally:
-        if 'recovery_conn' in locals():
-            recovery_conn.close()
-
+        if 'conn' in locals():
+            conn.close()
 
 def load_file_data_from_db(db_path):
     """
@@ -335,3 +306,4 @@ def load_file_data_from_db(db_path):
         return None, None
     finally:
         conn.close()
+

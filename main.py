@@ -4,6 +4,7 @@ import sys
 import os
 import subprocess
 import shutil
+import glob
 import pandas as pd
 from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog, QTableView, QVBoxLayout, QWidget, QLabel, \
     QHBoxLayout, QLineEdit, QSplitter, QStatusBar, QStyledItemDelegate, QTabWidget, QTextEdit, QSizePolicy, QMessageBox
@@ -16,6 +17,7 @@ from app_table import AppTableWidget
 from file_table import FileTableWidget
 from recovery_table import RecoveryTableWidget
 from no_focus_frame_style import NoFocusFrameStyle
+from Internal_Audit import InternalAuditWidget
 
 # 문자열 매핑 딕셔너리: 이벤트 이름을 간결한 이름으로 매핑
 name_mapping = {
@@ -181,17 +183,27 @@ class MainWindow(QMainWindow):
         """분석 PC 모드 초기화"""
         self.statusBar().showMessage("분석 PC 모드로 초기화 완료.")
 
+    # main.py - collect_files 메서드 수정
     def collect_files(self):
-        """대상 PC 모드에서 데이터 복사"""
+        """대상 PC 모드에서 데이터 복사 및 SRUM 파싱"""
         if self.current_mode != 'target':
             print("분석 모드에서 데이터 복사를 건너뜁니다.")
             return  # 분석 모드에서는 복사 기능 비활성화
+
+        # Recall_load 폴더 경로 설정
+        desktop_path = os.path.expanduser("~\\Desktop")
+        recall_load_dir = os.path.join(desktop_path, "Recall_load")
+        os.makedirs(recall_load_dir, exist_ok=True)
+
+        # Recover_Output 폴더 경로 설정
+        output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Recover_Output")
+        os.makedirs(output_dir, exist_ok=True)
 
         # 브라우저 히스토리 파일 복사
         try:
             if hasattr(self.web_table_tab, 'copy_history_files') and self.web_table_tab:
                 print("copy_history_files 호출 시작...")
-                self.web_table_tab.copy_history_files()  # WebTableWidget의 copy_history_files 호출
+                self.web_table_tab.copy_history_files(destination_folder=recall_load_dir)
                 print("브라우저 히스토리 파일 복사 완료")
             else:
                 print("WebTableWidget이 초기화되지 않았거나 copy_history_files 함수가 존재하지 않습니다.")
@@ -200,24 +212,29 @@ class MainWindow(QMainWindow):
 
         # SRUM 및 SOFTWARE 파일 복사
         try:
-            from app_table import AppTableWidget
-            widget = AppTableWidget()
-            widget.current_mode = self.current_mode  # 모드 전달
-            widget.copy_srum_files_and_backup()
-            print("SRUDB.dat 및 SOFTWARE 파일 복사 완료")
+            if hasattr(self.app_table_tab, 'copy_srum_files_and_backup'):
+                self.app_table_tab.copy_srum_files_and_backup(destination_folder=recall_load_dir)
+                print("SRUDB.dat 및 SOFTWARE 파일 복사 완료")
+            else:
+                print("AppTableWidget이 초기화되지 않았거나 copy_srum_files_and_backup 함수가 없습니다.")
         except Exception as e:
             print(f"SRUM 및 SOFTWARE 파일 복사 중 오류 발생: {e}")
 
         # ukg.db 파일 복사
-        desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
-        output_dir = os.path.join(desktop_path, "AppTable_data")
-        os.makedirs(output_dir, exist_ok=True)
-
         try:
-            ukg_db_source = os.path.join(desktop_path, "UKP", "{E158B942-96B3-494E-AC1F-D2656EEF1C4C}", "ukg.db")
-            ukg_db_destination = os.path.join(output_dir, "ukg.db")
+            user_path = os.path.expanduser("~")
+            ukp_folder_path = os.path.join(user_path, r"AppData\Local\CoreAIPlatform.00\UKP")
+            guid_folders = glob.glob(os.path.join(ukp_folder_path, "{*}"))
 
-            if os.path.exists(ukg_db_source):
+            ukg_db_source = None
+            for folder in guid_folders:
+                potential_path = os.path.join(folder, "ukg.db")
+                if os.path.exists(potential_path):
+                    ukg_db_source = potential_path
+                    break
+
+            if ukg_db_source:
+                ukg_db_destination = os.path.join(recall_load_dir, "ukg.db")
                 shutil.copyfile(ukg_db_source, ukg_db_destination)
                 print(f"ukg.db 파일 복사 완료: {ukg_db_destination}")
             else:
@@ -225,14 +242,62 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f"ukg.db 파일 복사 중 오류 발생: {e}")
 
+        # ukg.db-wal 파일 복사 및 이름 변경
+        try:
+            ukg_wal_source = None
+            for folder in guid_folders:
+                potential_wal_path = os.path.join(folder, "ukg.db-wal")
+                if os.path.exists(potential_wal_path):
+                    ukg_wal_source = potential_wal_path
+                    break
+
+            if ukg_wal_source:
+                wal_destination = os.path.join(output_dir, "remained.db-wal")
+                shutil.copyfile(ukg_wal_source, wal_destination)
+                print(f"ukg.db-wal 파일을 {wal_destination}로 복사 및 이름 변경 완료")
+            else:
+                print("ukg.db-wal 파일을 찾을 수 없습니다.")
+        except Exception as e:
+            print(f"ukg.db-wal 파일 복사 중 오류 발생: {e}")
+
+        # SRUM 데이터 파싱
+        try:
+            self.app_table_tab.srudb_path = os.path.join(recall_load_dir, "SRU_Artifacts", "SRUDB.dat")
+            self.app_table_tab.software_path = os.path.join(recall_load_dir, "SRU_Artifacts", "SOFTWARE")
+
+            if not os.path.exists(self.app_table_tab.srudb_path) or not os.path.exists(
+                    self.app_table_tab.software_path):
+                print("SRUM 파일이 없습니다. SRUM 파싱을 건너뜁니다.")
+                return
+
+            print("SRUM 데이터 파싱 시작")
+            self.app_table_tab.analyze_srum_data_for_analysis_mode()  # run_srum_tool 대체
+            print("SRUM 데이터 파싱 완료")
+        except Exception as e:
+            print(f"SRUM 데이터 파싱 중 오류 발생: {e}")
+
     def open_srum_files_dialog(self):
         """SRUM 파일과 SOFTWARE 파일을 선택하도록 하는 다이얼로그"""
-        # 분석 대상 PC 모드에서 이미 파일을 복사했으면 다이얼로그 호출하지 않음
-        if self.current_mode == 'target' and self.srudb_path and self.software_path:
-            print("대상 PC 모드에서는 이미 파일을 복사했으므로 선택을 건너뜁니다.")
+        if self.current_mode == 'target':
+            # 대상 PC 모드에서는 이미 복사된 파일 사용
+            recall_load_path = os.path.join(os.path.expanduser("~"), "Desktop", "Recall_load", "AppTable_DATA",
+                                            "SRU_Artifacts")
+            self.srudb_path = os.path.join(recall_load_path, "SRUDB.dat")
+            self.software_path = os.path.join(recall_load_path, "SOFTWARE")
+
+            if not os.path.exists(self.srudb_path) or not os.path.exists(self.software_path):
+                print("대상 PC 모드에서 복사된 파일이 존재하지 않습니다.")
+                return
+
+            print("대상 PC 모드에서 복사된 파일을 사용합니다:")
+            print(f"SRUDB.dat: {self.srudb_path}")
+            print(f"SOFTWARE: {self.software_path}")
+
+            # 대상 PC 모드에서는 바로 분석 실행
+            self.analyze_srum_data_for_target_mode()
             return
 
-        # SRUDB.dat 파일 선택
+        # 분석 PC 모드: 파일 선택
         sru_file, _ = QFileDialog.getOpenFileName(
             self, "SRUDB.dat 파일 선택", os.path.expanduser("~"), "All Files (*)"
         )
@@ -240,7 +305,6 @@ class MainWindow(QMainWindow):
             print("SRUM 파일을 선택하지 않았습니다. SRUM 파싱을 건너뜁니다.")
             return
 
-        # SOFTWARE 파일 선택
         software_file, _ = QFileDialog.getOpenFileName(
             self, "SOFTWARE 파일 선택", os.path.expanduser("~"), "All Files (*)"
         )
@@ -252,9 +316,11 @@ class MainWindow(QMainWindow):
         self.srudb_path = sru_file
         self.software_path = software_file
 
-        print("SRUM 및 SOFTWARE 파일이 지정되었습니다.")
+        print("분석 PC 모드에서 SRUM 및 SOFTWARE 파일이 지정되었습니다.")
+        print(f"SRUDB.dat: {self.srudb_path}")
+        print(f"SOFTWARE: {self.software_path}")
 
-        # 분석 PC 전용 SRUM 데이터 처리
+        # 분석 실행
         self.analyze_srum_data_for_analysis_mode()
 
     def setup_ui(self):
@@ -307,6 +373,10 @@ class MainWindow(QMainWindow):
         self.recovery_table_tab = RecoveryTableWidget()
         self.tab_widget.addTab(self.recovery_table_tab, "RecoveryTable")
 
+        # Internal Audit 탭 추가
+        self.internal_audit_tab = InternalAuditWidget()
+        self.tab_widget.addTab(self.internal_audit_tab, "InternalAudit")
+
         # 상태 표시줄 추가
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
@@ -330,50 +400,25 @@ class MainWindow(QMainWindow):
         if self.db_path:
             self.file_table_tab.set_db_path(self.db_path)
 
-    def analyze_srum_data_for_analysis_mode(self):
-        """분석 PC 모드 전용 SRUM 데이터 처리"""
+    def analyze_srum_data(self):
+        """SRUM 데이터 분석"""
         if not self.srudb_path or not self.software_path:
             print("SRUDB.dat 및 SOFTWARE 파일이 모두 지정되어야 합니다.")
             return
 
-        print("분석 PC 모드에서 SRUM 데이터 처리를 시작합니다.")
+        print("SRUM 데이터 처리를 시작합니다.")
 
         # 출력 디렉터리 생성
         output_folder = os.path.join(os.path.dirname(self.srudb_path), "Output_File")
         os.makedirs(output_folder, exist_ok=True)
 
-        # SrumECmd.exe 실행 경로
-        srum_tool_path = os.path.join(os.getcwd(), "SrumECmd.exe")
-        if not os.path.exists(srum_tool_path):
-            print(f"SrumECmd.exe 파일이 {srum_tool_path} 경로에 존재하지 않습니다.")
-            return
+        # SrumECmd 실행
+        self.app_table_tab.srudb_path = self.srudb_path
+        self.app_table_tab.software_path = self.software_path
+        self.app_table_tab.analyze_srum_data_for_analysis_mode()
 
-        # 실행 명령어 생성
-        command = [
-            srum_tool_path,
-            "-f", self.srudb_path,
-            "-r", self.software_path,
-            "--csv", output_folder
-        ]
-
-        print(f"실행할 명령어: {' '.join(command)}")
-
-        # 명령어 실행 (subprocess 사용)
-        try:
-            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-
-            # 명령어 실행 후 바로 종료 (출력은 로그에 저장되지 않음)
-            process.wait()  # 이 라인 추가로 프로세스 종료를 기다림
-
-            if process.returncode == 0:
-                print("SrumECmd 실행 완료")
-                # ForegroundCycleTime 데이터 로드
-                self.load_foreground_cycle_time(output_folder)
-            else:
-                print("SrumECmd 실행 실패")
-
-        except Exception as e:
-            print(f"SrumECmd 실행 중 오류 발생: {e}")
+        # ForegroundCycleTime 데이터 로드
+        self.app_table_tab.load_foreground_cycle_time(output_folder)
 
     def load_foreground_cycle_time(self, output_folder):
         """ForegroundCycleTime 데이터를 로드하고 연관 분석 수행"""
@@ -517,7 +562,33 @@ class MainWindow(QMainWindow):
             if hasattr(self.recovery_table_tab, 'set_db_paths'):
                 self.recovery_table_tab.set_db_paths(db_path, recovered_wal_db)
 
-            # **대상 PC 모드에서는 후속 파일 선택을 건너뛰고 바로 복사 작업만 진행**
+            # **히스토리 파일 경로 설정 및 관련 데이터 갱신**: ukg.db 파일 선택 후 실행
+            try:
+                if self.current_mode == 'target':  # 대상 PC 모드일 때만 히스토리 파일 설정
+                    if hasattr(self.web_table_tab, 'set_history_db_path') and hasattr(self.web_table_tab,
+                                                                                      'update_related_data_status'):
+                        # 히스토리 파일 경로 설정
+                        history_path = os.path.join(desktop_path, "Recall_load", "Browser_History", "Chrome_History")
+                        if os.path.exists(history_path):
+                            print(f"[DEBUG] 히스토리 파일 경로 설정: {history_path}")
+                            self.web_table_tab.set_history_db_path(history_path)
+
+                            # 관련 데이터 상태 갱신 및 디버깅 로그
+                            self.web_table_tab.update_related_data_status()
+                            print("[DEBUG] update_related_data_status 호출 완료.")
+
+                            # 테이블 뷰 강제 새로고침
+                            self.web_table_tab.table_view.model().layoutChanged.emit()
+                            self.web_table_tab.table_view.viewport().update()
+                            print("[DEBUG] 테이블 뷰 강제 새로고침 완료.")
+                        else:
+                            print("[DEBUG] 히스토리 파일 경로가 존재하지 않습니다.")
+                else:
+                    print("[DEBUG] 분석 PC 모드에서는 히스토리 파일 설정이 생략됩니다.")
+            except Exception as e:
+                print(f"[DEBUG] 히스토리 파일 설정 및 데이터 갱신 중 오류 발생: {e}")
+
+            # 분석 PC 모드일 경우 후속 파일 선택을 진행
             if self.current_mode == 'analysis':
                 self.open_additional_files_dialog()
         else:
@@ -535,6 +606,15 @@ class MainWindow(QMainWindow):
                 print(f"히스토리 파일이 선택되었습니다: {self.history_db_path}")
                 if hasattr(self.web_table_tab, 'set_history_db_path'):
                     self.web_table_tab.set_history_db_path(history_file)
+
+                    # display_related_history_data 호출
+                    model = self.web_table_tab.table_view.model()
+                    if model and model.rowCount() > 0:
+                        index = model.index(0, 3)  # 첫 번째 행의 4번째 열
+                        print(f"[DEBUG] display_related_history_data 호출, index: {index}")
+                        self.web_table_tab.display_related_history_data(index)
+                    else:
+                        print("[DEBUG] 테이블에 데이터가 없어 display_related_history_data 호출 생략.")
             else:
                 print("히스토리 파일 선택이 건너뛰어졌습니다.")
 
@@ -559,12 +639,7 @@ class MainWindow(QMainWindow):
             # 파일이 모두 선택된 경우에만 SRUM 분석 호출
             if self.srudb_path and self.software_path:
                 print("SRUM 분석 함수 호출 시작")
-                # 분석 PC 모드일 경우 분석 전용 함수 호출
-                if self.current_mode == 'analysis':
-                    self.analyze_srum_data_for_analysis_mode()
-                else:
-                    # 대상 PC 모드라면 기존의 분석 로직을 실행
-                    self.run_srum_parsing(self.srudb_path, self.software_path, os.path.dirname(self.srudb_path))
+                self.analyze_srum_data_for_analysis_mode()
             else:
                 print("SRUDB.dat 또는 SOFTWARE 파일이 누락되었습니다. 분석을 진행할 수 없습니다.")
 

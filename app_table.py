@@ -59,10 +59,15 @@ class AppTableWidget(QWidget):
         self.info_label.hide()
 
     def set_db_path(self, db_path):
+        if not db_path:
+            print("set_db_path 호출 시 db_path가 비어 있습니다!")
+            return
         self.db_path = db_path
+        print(f"db_path가 설정됨: {self.db_path}")  # 디버깅용 로그
         self.load_app_data()
         if self.current_mode == 'target':  # 대상 PC 모드에서만 복사 및 파싱
-            self.copy_srum_files_and_backup()
+            recall_load_dir = os.path.join(os.path.expanduser("~"), "Desktop", "Recall_load")
+            self.copy_srum_files_and_backup(recall_load_dir)
 
     def load_app_data(self):
         data, headers = load_app_data_from_db(self.db_path)
@@ -96,68 +101,29 @@ class AppTableWidget(QWidget):
                 self.text_box3.setText("Jumplist 관련 데이터 표시 예정")
                 self.text_box4.setText("SRUM 데이터는 여기에 표시됩니다.")
 
-    def copy_srum_files_and_backup(self):
-        """SRUM 및 SOFTWARE 파일 복사 또는 분석"""
-        # 공통 변수 설정
-        desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
-        app_table_data_path = os.path.join(desktop_path, "AppTable_data")
-        srudb_dst_path = os.path.join(app_table_data_path, "SRUDB.dat")
-        software_dst_path = os.path.join(app_table_data_path, "SOFTWARE")
-        srum_tool_path = os.path.join(os.getcwd(), "SrumECmd.exe")
-        output_csv_dir = os.path.join(app_table_data_path, "Output_File")
+    def copy_srum_files_and_backup(self, destination_folder):
+        """SRUM 및 SOFTWARE 파일 복사만 수행"""
+        srudb_src_path = r"C:\Windows\System32\sru\SRUDB.dat"
+        srudb_dst_path = os.path.join(destination_folder, "SRU_Artifacts", "SRUDB.dat")
+        software_dst_path = os.path.join(destination_folder, "SRU_Artifacts", "SOFTWARE")
+        srum_tool_output_dir = os.path.join(destination_folder, "Output_File")
 
-        os.makedirs(app_table_data_path, exist_ok=True)
-
-        # 분석 PC 모드라면, 이미 선택된 파일 사용
-        if getattr(self, 'current_mode', None) == 'analysis':
-            print(f"분석 모드: SRUM 파일 경로: {self.srudb_path}, SOFTWARE 파일 경로: {self.software_path}")
-            if not os.path.exists(self.srudb_path) or not os.path.exists(self.software_path):
-                print("분석 모드에서 지정된 파일 경로가 유효하지 않습니다.")
-                return
-
-            srudb_dst_path = self.srudb_path
-            software_dst_path = self.software_path
-        else:
-            # 대상 PC 모드: 파일 복사
-            srudb_src_path = r"C:\Windows\System32\sru\SRUDB.dat"
-            print("SRUDB.dat 파일 복사 중...")
-            if not os.path.exists(srudb_src_path):
-                print(f"SRUDB.dat 파일이 {srudb_src_path} 경로에 존재하지 않습니다. 복사를 건너뜁니다.")
-                return
-
-            try:
-                file_data = self.read_file(srudb_src_path, buffer_size=50 * 1024 * 1024)
-                with open(srudb_dst_path, "wb") as f:
-                    f.write(file_data)
-                print(f"SRUDB.dat 파일 복사 완료: {srudb_dst_path}")
-            except Exception as e:
-                print(f"SRUDB.dat 파일 복사 실패: {e}")
-                return
-
-            # SOFTWARE 파일 복사
-            print("SOFTWARE 하이브 백업 중...")
-            if not os.path.exists("C:\\Windows\\System32\\config\\SOFTWARE"):
-                print("SOFTWARE 하이브 파일이 존재하지 않습니다. 복사를 건너뜁니다.")
-                return
-
-            try:
-                self.backup_registry_hive(software_dst_path)
-                print(f"SOFTWARE 하이브 백업 완료: {software_dst_path}")
-            except Exception as e:
-                print(f"SOFTWARE 하이브 백업 실패: {e}")
-                return
-
-        # SrumECmd 실행
-        print("SrumECmd 실행 중...")
+        # SRUDB.dat 파일 복사
         try:
-            self.run_srum_tool(srum_tool_path, srudb_dst_path, software_dst_path, output_csv_dir)
-            print("SrumECmd 실행 완료")
+            os.makedirs(os.path.dirname(srudb_dst_path), exist_ok=True)
+            file_data = self.read_file(srudb_src_path)
+            with open(srudb_dst_path, "wb") as f:
+                f.write(file_data)
+            print(f"SRUDB.dat 파일 복사 완료: {srudb_dst_path}")
         except Exception as e:
-            print(f"SrumECmd 실행 중 오류 발생: {e}")
-            return
+            print(f"SRUDB.dat 파일 복사 실패: {e}")
 
-        # ForegroundCycleTime 데이터 로드
-        self.load_foreground_cycle_time(output_csv_dir)
+        # SOFTWARE 하이브 복사
+        try:
+            self.backup_registry_hive(software_dst_path)
+            print(f"SOFTWARE 하이브 복사 완료: {software_dst_path}")
+        except Exception as e:
+            print(f"SOFTWARE 하이브 복사 실패: {e}")
 
     def read_file(self, file_path, buffer_size=50 * 1024 * 1024):
         kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -240,38 +206,47 @@ class AppTableWidget(QWidget):
         except subprocess.CalledProcessError as e:
             print(f"레지스트리 하이브 백업 중 예외 발생: {e}")
 
-    def run_srum_tool(self, srum_tool_path, srudb_path, software_hive_path, output_csv_dir):
-        # SRUM 파일이 존재하지 않으면 건너뜁니다.
+    def analyze_srum_data_for_analysis_mode(self):
+        """분석 PC 모드 전용 SRUM 데이터 처리"""
+        if not self.srudb_path or not self.software_path:
+            print("SRUDB.dat 및 SOFTWARE 파일이 모두 지정되어야 합니다.")
+            return
+
+        print("분석 PC 모드에서 SRUM 데이터 처리를 시작합니다.")
+
+        # 출력 디렉터리 생성
+        output_folder = os.path.join(os.path.dirname(self.srudb_path), "Output_File")
+        os.makedirs(output_folder, exist_ok=True)
+
+        # SrumECmd.exe 실행 경로
+        srum_tool_path = os.path.join(os.getcwd(), "SrumECmd.exe")
         if not os.path.exists(srum_tool_path):
-            print(f"SrumECmd.exe 파일이 경로 {srum_tool_path} 에 존재하지 않습니다.")
+            print(f"SrumECmd.exe 파일이 {srum_tool_path} 경로에 존재하지 않습니다.")
             return
 
-        if not os.path.exists(srudb_path):
-            print(f"SRUDB.dat 파일이 경로 {srudb_path} 에 존재하지 않습니다. SRUM 파싱을 건너뜁니다.")
-            return
+        # 실행 명령어 생성
+        command = [
+            srum_tool_path,
+            "-f", self.srudb_path,
+            "-r", self.software_path,
+            "--csv", output_folder
+        ]
 
-        if not os.path.exists(software_hive_path):
-            print(f"SOFTWARE 파일이 경로 {software_hive_path} 에 존재하지 않습니다. SRUM 파싱을 건너뜁니다.")
-            return
+        print(f"실행할 명령어: {' '.join(command)}")
 
+        # 명령어 실행 (subprocess 사용)
         try:
-            os.makedirs(output_csv_dir, exist_ok=True)
-            command = [
-                srum_tool_path,
-                "-f", srudb_path,
-                "-r", software_hive_path,
-                "--csv", output_csv_dir
-            ]
+            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
-            print(f"실행할 명령어: {' '.join(command)}")
+            # 명령어 실행 후 바로 종료 (출력은 로그에 저장되지 않음)
+            process.wait()  # 이 라인 추가로 프로세스 종료를 기다림
 
-            result = subprocess.run(command, check=True, text=True, capture_output=True)
-
-            if result.returncode == 0:
-                print(f"SrumECmd 실행 완료: {result.stdout}")
+            if process.returncode == 0:
+                print("SrumECmd 실행 완료")
+                # ForegroundCycleTime 데이터 로드
+                self.load_foreground_cycle_time(output_folder)
             else:
-                print(f"SrumECmd 실행 중 오류 발생: {result.stderr}")
+                print("SrumECmd 실행 실패")
 
-        except subprocess.CalledProcessError as e:
+        except Exception as e:
             print(f"SrumECmd 실행 중 오류 발생: {e}")
-            print(f"출력된 에러 메시지: {e.stderr}")
