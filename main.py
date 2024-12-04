@@ -593,23 +593,34 @@ class MainWindow(QMainWindow):
                     if hasattr(self.web_table_tab, 'set_history_db_path') and hasattr(self.web_table_tab,
                                                                                       'update_related_data_status'):
                         # 히스토리 파일 경로 설정
-                        history_path = os.path.join(desktop_path, "Recall_load", "Browser_History", "Chrome_History")
-                        if os.path.exists(history_path):
-                            print(f"[DEBUG] 히스토리 파일 경로 설정: {history_path}")
-                            self.web_table_tab.set_history_db_path(history_path)
+                        chrome_history_path = os.path.join(desktop_path, "Recall_load", "Browser_History",
+                                                           "Chrome_History")
+                        edge_history_path = os.path.join(desktop_path, "Recall_load", "Browser_History", "Edge_History")
+
+                        # Chrome 히스토리 처리
+                        if os.path.exists(chrome_history_path):
+                            print(f"[DEBUG] Chrome 히스토리 파일 경로 설정: {chrome_history_path}")
+                            self.web_table_tab.set_history_db_path(chrome_history_path)
 
                             # 관련 데이터 상태 갱신 및 디버깅 로그
                             self.web_table_tab.update_related_data_status()
-                            print("[DEBUG] update_related_data_status 호출 완료.")
+                            print("[DEBUG] Chrome 히스토리 update_related_data_status 호출 완료.")
 
-                            # 테이블 뷰 강제 새로고침
-                            self.web_table_tab.table_view.model().layoutChanged.emit()
-                            self.web_table_tab.table_view.viewport().update()
-                            print("[DEBUG] 테이블 뷰 강제 새로고침 완료.")
-                        else:
-                            print("[DEBUG] 히스토리 파일 경로가 존재하지 않습니다.")
-                else:
-                    print("[DEBUG] 분석 PC 모드에서는 히스토리 파일 설정이 생략됩니다.")
+                        # Edge 히스토리 처리
+                        if os.path.exists(edge_history_path):
+                            print(f"[DEBUG] Edge 히스토리 파일 경로 설정: {edge_history_path}")
+                            self.web_table_tab.set_history_db_path(edge_history_path)
+
+                            # 관련 데이터 상태 갱신 및 디버깅 로그
+                            self.web_table_tab.update_related_data_status()
+                            print("[DEBUG] Edge 히스토리 update_related_data_status 호출 완료.")
+
+                        # 테이블 뷰 강제 새로고침
+                        self.web_table_tab.table_view.model().layoutChanged.emit()
+                        self.web_table_tab.table_view.viewport().update()
+                        print("[DEBUG] 테이블 뷰 강제 새로고침 완료.")
+                    else:
+                        print("[DEBUG] 분석 PC 모드에서는 히스토리 파일 설정이 생략됩니다.")
             except Exception as e:
                 print(f"[DEBUG] 히스토리 파일 설정 및 데이터 갱신 중 오류 발생: {e}")
 
@@ -620,26 +631,59 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "파일 선택 취소", "ukg.db 파일이 선택되지 않았습니다.")
 
     def open_additional_files_dialog(self):
-        """ukg.db 이후 history, SRUDB.dat, SOFTWARE 파일 선택"""
+        """ukg.db 이후 여러 히스토리 파일, SRUDB.dat, SOFTWARE 파일 선택"""
         try:
             desktop_path = os.path.expanduser("~/Desktop")  # 바탕화면 경로로 설정
 
-            # History 파일 선택
-            history_file = self.open_file("히스토리 파일 선택", desktop_path, "All Files (*)")
-            if history_file:
-                self.history_db_path = history_file
-                print(f"히스토리 파일이 선택되었습니다: {self.history_db_path}")
-                if hasattr(self.web_table_tab, 'set_history_db_path'):
-                    self.web_table_tab.set_history_db_path(history_file)
+            # History 파일 다중 선택
+            history_files, _ = QFileDialog.getOpenFileNames(
+                self, "히스토리 파일 선택", desktop_path, "All Files (*)"
+            )
 
-                    # display_related_history_data 호출
-                    model = self.web_table_tab.table_view.model()
-                    if model and model.rowCount() > 0:
-                        index = model.index(0, 3)  # 첫 번째 행의 4번째 열
-                        print(f"[DEBUG] display_related_history_data 호출, index: {index}")
-                        self.web_table_tab.display_related_history_data(index)
-                    else:
-                        print("[DEBUG] 테이블에 데이터가 없어 display_related_history_data 호출 생략.")
+            if history_files:
+                print(f"히스토리 파일이 선택되었습니다: {history_files}")
+                for history_file in history_files:
+                    if hasattr(self.web_table_tab, 'set_history_db_path'):
+                        # 기존 데이터 유지
+                        existing_model = self.web_table_tab.table_view.model()
+                        existing_data = []
+
+                        if existing_model:
+                            for row in range(existing_model.rowCount()):
+                                existing_row = [
+                                    existing_model.index(row, col).data()
+                                    for col in range(existing_model.columnCount())
+                                ]
+                                existing_data.append(existing_row)
+
+                        # 히스토리 파일 처리
+                        self.web_table_tab.set_history_db_path(history_file)
+                        self.web_table_tab.update_related_data_status()
+
+                        # 새로운 데이터와 기존 데이터를 병합
+                        new_model = self.web_table_tab.table_view.model()
+                        if new_model:
+                            for row in range(new_model.rowCount()):
+                                new_row = [
+                                    new_model.index(row, col).data()
+                                    for col in range(new_model.columnCount())
+                                ]
+                                existing_data.append(new_row)
+
+                        # 병합 데이터를 새로운 모델에 설정
+                        headers = [
+                            new_model.headerData(col, Qt.Horizontal)
+                            for col in range(new_model.columnCount())
+                        ]
+                        merged_model = SQLiteTableModel(existing_data, headers)
+                        self.web_table_tab.proxy_model.setSourceModel(merged_model)
+                        self.web_table_tab.table_view.setModel(self.web_table_tab.proxy_model)
+
+                        # 테이블 뷰 새로고침
+                        self.web_table_tab.table_view.model().layoutChanged.emit()
+                        self.web_table_tab.table_view.viewport().update()
+
+                        print(f"[DEBUG] {history_file} 데이터가 성공적으로 처리되었습니다.")
             else:
                 print("히스토리 파일 선택이 건너뛰어졌습니다.")
 

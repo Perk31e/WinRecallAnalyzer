@@ -339,7 +339,6 @@ class RecoveryTableWidget(QWidget):
             '''
             print("\n[7단계] 복구 완료 메시지 표시")
             self.on_recovery_info("복구 스크립트가 성공적으로 실행되었습니다.")
-            self.load_recovery_data()
 
         except Exception as e:
             error_msg = f"복구 스크립트 실행 중 예외 발생: {e}"
