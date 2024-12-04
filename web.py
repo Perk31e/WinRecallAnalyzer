@@ -33,19 +33,30 @@ def convert_unix_timestamp(unix_timestamp):
 # Helper function to simplify Title
 def simplify_title(title):
     """
-    브라우저 제목을 간소화하는 함수
-    - Chrome, Edge와 같은 브라우저 접미사를 제거합니다.
-    - Microsoft Edge는 " - 프로필 X - Microsoft Edge" 또는 " - Microsoft Edge"를 제거합니다.
+    Edge 및 Chrome 브라우저 제목에서 주요 정보만 추출하고 공백 문제를 해결
     """
-    # Microsoft Edge 제목 패턴 제거
-    title = re.sub(r" - 프로필 \d - Microsoft Edge$", "", title)  # " - 프로필 X - Microsoft Edge"
-    title = re.sub(r" - Microsoft Edge$", "", title)              # " - Microsoft Edge"
+    if not title:
+        return None
 
-    # Chrome 제목 패턴 제거
-    title = re.sub(r" - Chrome$", "", title)                      # " - Chrome"
+    # 1. 보이지 않는 공백 문자 제거 (예: \u200b, \xa0 등)
+    title = re.sub(r"[\u200b\xa0]+", " ", title)
 
-    return title
+    # 2. 일반 공백으로 통일
+    title = re.sub(r"\s+", " ", title)
 
+    # 3. Edge 브라우저 관련 패턴 제거
+    title = re.sub(r" 외 페이지 \d+개", "", title)  # "외 페이지 X개" 제거
+    title = re.sub(r" - 프로필 \d+", "", title)    # "- 프로필 Y" 제거
+    title = re.sub(r" - Microsoft Edge$", "", title)  # "- Microsoft Edge" 제거
+    title = re.sub(r"Microsoft Edge$", "", title)     # 단독 "Microsoft Edge" 제거
+
+    # 4. Chrome 브라우저 관련 패턴 제거
+    title = re.sub(r" - Chrome$", "", title)  # "- Chrome" 제거
+
+    # 5. 공백과 하이픈 정리
+    title = title.strip("- ")  # 양쪽 불필요한 '-'와 공백 제거
+
+    return title.strip() if title.strip() else None
 
 class DetailDialog(QDialog):
     def __init__(self, data, headers):
@@ -280,7 +291,7 @@ class WebTableWidget(QWidget):
                         timezone(timedelta(hours=9))
                     )
                     browser_unix_timestamp = int(kst_time_converted.timestamp())
-                except Exception as e:
+                except Exception:
                     continue
 
                 # ±1초의 매칭 허용
@@ -289,7 +300,7 @@ class WebTableWidget(QWidget):
 
             return "X"  # 연관 데이터 없음 (X)
 
-        except sqlite3.Error as e:
+        except sqlite3.Error:
             return "X"  # 오류 발생 시 연관 데이터 없음 (X)
 
         finally:
