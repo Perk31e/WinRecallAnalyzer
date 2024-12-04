@@ -337,7 +337,7 @@ class RecoveryTableWidget(QWidget):
                 - 결과 메시지 표시
                 - 복구된 데이터 로드
             '''
-            print("\n[7단계] 복구 ���료 ��시지 표시")
+            print("\n[7단계] 복구 완료 메시지 표시")
             self.on_recovery_info("복구 스크립트가 성공적으로 실행되었습니다.")
             self.load_recovery_data()
 
