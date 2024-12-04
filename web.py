@@ -32,7 +32,20 @@ def convert_unix_timestamp(unix_timestamp):
 
 # Helper function to simplify Title
 def simplify_title(title):
-    return re.sub(r"( - Chrome)$", "", title)
+    """
+    브라우저 제목을 간소화하는 함수
+    - Chrome, Edge와 같은 브라우저 접미사를 제거합니다.
+    - Microsoft Edge는 " - 프로필 X - Microsoft Edge" 또는 " - Microsoft Edge"를 제거합니다.
+    """
+    # Microsoft Edge 제목 패턴 제거
+    title = re.sub(r" - 프로필 \d - Microsoft Edge$", "", title)  # " - 프로필 X - Microsoft Edge"
+    title = re.sub(r" - Microsoft Edge$", "", title)              # " - Microsoft Edge"
+
+    # Chrome 제목 패턴 제거
+    title = re.sub(r" - Chrome$", "", title)                      # " - Chrome"
+
+    return title
+
 
 class DetailDialog(QDialog):
     def __init__(self, data, headers):
@@ -243,11 +256,10 @@ class WebTableWidget(QWidget):
                 )
                 ukg_unix_timestamp = int(kst_time_ukg.timestamp())
             except ValueError:
-                print("[DEBUG] 타임스탬프 변환 오류:", timestamp_ukg)
                 return "X"  # 변환 실패 시 연관 데이터 없음 (X)
 
-            # 타이틀 간소화 (접미사 제거)
-            simplified_title = re.sub(r" - (Chrome|Edge|Firefox|Whale)$", "", title_ukg)
+            # 타이틀 간소화
+            simplified_title = simplify_title(title_ukg)
 
             # 히스토리 데이터와 연관성 확인
             query = "SELECT title, last_visit_time FROM urls WHERE title REGEXP ?"
@@ -271,8 +283,8 @@ class WebTableWidget(QWidget):
                 except Exception as e:
                     continue
 
-                # ±0초의 정확한 매칭만 허용
-                if chrome_title == simplified_title and browser_unix_timestamp == ukg_unix_timestamp:
+                # ±1초의 매칭 허용
+                if chrome_title == simplified_title and abs(browser_unix_timestamp - ukg_unix_timestamp) <= 1:
                     return "O"  # 연관 데이터 있음 (O)
 
             return "X"  # 연관 데이터 없음 (X)
@@ -332,6 +344,9 @@ class WebTableWidget(QWidget):
         model.layoutChanged.emit()
 
     def display_related_history_data(self, index=None):
+        """
+        선택된 행의 관련 히스토리 데이터를 오른쪽 데이터 뷰어에 표시합니다.
+        """
         if index is None:
             self.data_viewer.setText("히스토리 데이터를 표시할 인덱스가 없습니다.")
             return
@@ -349,8 +364,7 @@ class WebTableWidget(QWidget):
             return
 
         # 타이틀 간소화
-        simplified_title = re.sub(r" - Chrome$", "", selected_title)
-        print(f"[DEBUG] 간소화된 타이틀: {simplified_title}")
+        simplified_title = simplify_title(selected_title)
 
         try:
             # SQLite 연결
@@ -377,13 +391,18 @@ class WebTableWidget(QWidget):
             for row in data:
                 chrome_title = row[1]
                 chrome_time = row[3]
+
                 # Chrome 시간도 KST로 변환
                 kst_time_converted = convert_chrome_timestamp(chrome_time).astimezone(
                     timezone(timedelta(hours=9))
                 )
+                browser_unix_timestamp = int(kst_time_converted.timestamp())
 
-                # 타이틀과 타임스탬프 비교
-                if simplified_title == chrome_title and int(kst_time_converted.timestamp()) == unix_timestamp:
+                # ±1초 허용
+                if (
+                        simplified_title == chrome_title
+                        and abs(browser_unix_timestamp - unix_timestamp) <= 1
+                ):
                     related_data.append(row)
 
             # 데이터 뷰어에 결과 표시
@@ -391,7 +410,9 @@ class WebTableWidget(QWidget):
                 formatted_data = []
                 for row in related_data:
                     last_visit_time = row[3]
-                    converted_time = convert_chrome_timestamp(last_visit_time).astimezone(timezone(timedelta(hours=9)))
+                    converted_time = convert_chrome_timestamp(last_visit_time).astimezone(
+                        timezone(timedelta(hours=9))
+                    )
                     formatted_data.append(
                         f"URL: {row[0]}\nTitle: {row[1]}\nVisit Count: {row[2]}\nLast Visit Time: {converted_time}\n---"
                     )
