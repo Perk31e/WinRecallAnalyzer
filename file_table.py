@@ -4,6 +4,7 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout, QTableView, QSplitter, QLabe
 from PySide6.QtCore import Qt
 from database import SQLiteTableModel, load_file_data_from_db
 from no_focus_frame_style import NoFocusFrameStyle
+import os
 
 class FileTableWidget(QWidget):
     def __init__(self, db_path=""):
@@ -43,10 +44,21 @@ class FileTableWidget(QWidget):
         self.table_view.selectionModel().selectionChanged.connect(self.update_detail_view)
 
     def set_db_path(self, db_path):
+        """DB 경로 설정 및 데이터 로드"""
+        if not db_path or not os.path.exists(db_path):
+            print("FileTable에서 잘못된 데이터베이스 경로가 전달되었습니다.")
+            return
+
+        print(f"FileTable에서 데이터베이스 경로가 설정되었습니다: {db_path}")
         self.db_path = db_path
-        self.load_data(db_path)
+        
+        try:
+            self.load_data(db_path)
+        except Exception as e:
+            print(f"FileTable 데이터 로드 중 오류 발생: {e}")
 
     def load_data(self, db_path):
+        """테이블에 데이터를 로드합니다."""
         data, headers = load_file_data_from_db(db_path)
         if data:
             model = SQLiteTableModel(data, headers)
@@ -58,11 +70,10 @@ class FileTableWidget(QWidget):
             # Path 칼럼의 인덱스 가져오기
             path_column_index = headers.index('Path')
             
-            # Path 칼럼의 너비를 원하는 픽셀 값으로 설정 (예: 300)
+            # Path 칼럼의 너비를 300픽셀로 설정
             self.table_view.setColumnWidth(path_column_index, 300)
         else:
             self.table_view.setModel(None)
-
 
     def update_detail_view(self, selected, deselected):
         for index in selected.indexes():

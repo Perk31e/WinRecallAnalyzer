@@ -580,6 +580,8 @@ class MainWindow(QMainWindow):
                 self.image_table_tab.set_db_path(self.db_path)  # self.db_path 사용
             if hasattr(self.web_table_tab, 'set_db_path'):
                 self.web_table_tab.set_db_path(self.db_path)  # self.db_path 사용
+            if hasattr(self.file_table_tab, 'set_db_path'):  # FileTableWidget에 db_path 설정 추가
+                self.file_table_tab.set_db_path(self.db_path)
             if hasattr(self.recovery_table_tab, 'set_db_paths'):
                 self.recovery_table_tab.set_db_paths(db_path, recovered_wal_db)
             if hasattr(self.internal_audit_tab, 'set_db_path'):
