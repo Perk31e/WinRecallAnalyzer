@@ -641,26 +641,25 @@ class MainWindow(QMainWindow):
             )
 
             if history_files:
-                print(f"히스토리 파일이 선택되었습니다: {history_files}")
+                print(f"[DEBUG] 히스토리 파일이 선택되었습니다: {history_files}")
+                # 기존 데이터 가져오기
+                existing_data = []
+                existing_model = self.web_table_tab.table_view.model()
+                if existing_model:
+                    for row in range(existing_model.rowCount()):
+                        existing_row = [
+                            existing_model.index(row, col).data()
+                            for col in range(existing_model.columnCount())
+                        ]
+                        existing_data.append(existing_row)
+
+                # 각 파일에 대해 처리
                 for history_file in history_files:
                     if hasattr(self.web_table_tab, 'set_history_db_path'):
-                        # 기존 데이터 유지
-                        existing_model = self.web_table_tab.table_view.model()
-                        existing_data = []
-
-                        if existing_model:
-                            for row in range(existing_model.rowCount()):
-                                existing_row = [
-                                    existing_model.index(row, col).data()
-                                    for col in range(existing_model.columnCount())
-                                ]
-                                existing_data.append(existing_row)
-
-                        # 히스토리 파일 처리
                         self.web_table_tab.set_history_db_path(history_file)
                         self.web_table_tab.update_related_data_status()
 
-                        # 새로운 데이터와 기존 데이터를 병합
+                        # 새로운 데이터를 모델에서 가져오기
                         new_model = self.web_table_tab.table_view.model()
                         if new_model:
                             for row in range(new_model.rowCount()):
@@ -668,22 +667,24 @@ class MainWindow(QMainWindow):
                                     new_model.index(row, col).data()
                                     for col in range(new_model.columnCount())
                                 ]
-                                existing_data.append(new_row)
+                                # 중복 확인 후 추가
+                                if new_row not in existing_data:
+                                    existing_data.append(new_row)
 
-                        # 병합 데이터를 새로운 모델에 설정
-                        headers = [
-                            new_model.headerData(col, Qt.Horizontal)
-                            for col in range(new_model.columnCount())
-                        ]
-                        merged_model = SQLiteTableModel(existing_data, headers)
-                        self.web_table_tab.proxy_model.setSourceModel(merged_model)
-                        self.web_table_tab.table_view.setModel(self.web_table_tab.proxy_model)
+                # 병합된 데이터를 새로운 모델로 설정
+                headers = [
+                    existing_model.headerData(col, Qt.Horizontal)
+                    for col in range(existing_model.columnCount())
+                ]
+                merged_model = SQLiteTableModel(existing_data, headers)
+                self.web_table_tab.proxy_model.setSourceModel(merged_model)
+                self.web_table_tab.table_view.setModel(self.web_table_tab.proxy_model)
 
-                        # 테이블 뷰 새로고침
-                        self.web_table_tab.table_view.model().layoutChanged.emit()
-                        self.web_table_tab.table_view.viewport().update()
+                # 테이블 뷰 새로고침
+                self.web_table_tab.table_view.model().layoutChanged.emit()
+                self.web_table_tab.table_view.viewport().update()
+                print("[DEBUG] 히스토리 파일 데이터가 성공적으로 병합 및 업데이트되었습니다.")
 
-                        print(f"[DEBUG] {history_file} 데이터가 성공적으로 처리되었습니다.")
             else:
                 print("히스토리 파일 선택이 건너뛰어졌습니다.")
 
