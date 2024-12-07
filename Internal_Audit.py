@@ -86,7 +86,7 @@ class InternalAuditWidget(QWidget):
         # 스플리터 비율 설정 (7:3)
         splitter.setSizes([700, 300])
         
-        # 메인 레이아웃에 스플리터 추가
+        # 메인 레이아웃에 스플리 추가
         main_layout.addWidget(splitter)
         
         # 초기 텍스트 설정
@@ -288,7 +288,7 @@ class InternalAuditWidget(QWidget):
                     col = index % images_per_row
                     self.image_layout.addWidget(set_box, row, col)
                 else:
-                    print("[Internal Audit] 이미지 로드 실패 (픽스맵이 NULL):", image_path_with_ext)
+                    print("[Internal Audit] 이미지 로드 실패 (픽스맵이 NULL입니다):", image_path_with_ext)
             else:
                 print("[Internal Audit] 이미지 파일을 찾을 수 없음:", base_image_path)
 
@@ -496,9 +496,17 @@ class InternalAuditWidget(QWidget):
                     # OCR 텍스트 정제 (검색어 강조 이후)
                     cleaned_text = self.clean_ocr_text(highlighted_text)
                     
-                    # 검색어 정보 추가
+                    # 검색어 정보 추가 - 연산자를 더 직관적으로 표시
                     if search_terms:
-                        search_terms_str = ' && '.join(f"<b>{term}</b>" for term in search_terms)
+                        # && -> AND, || -> OR로 변환
+                        if "&&" in current_search:
+                            operator = " AND "
+                        elif "||" in current_search:
+                            operator = " OR "
+                        else:
+                            operator = " "
+                            
+                        search_terms_str = operator.join(f"<b>{term}</b>" for term in search_terms)
                         output_text += f"<p>검색어 ({search_terms_str})가 포함된 이미지입니다.</p>"
                     
                     output_text += f"<p><br>OCR 출력물:</p><p>{cleaned_text}</p>"
