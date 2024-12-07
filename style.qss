@@ -1,19 +1,21 @@
 /* Global Style */
 QWidget {
-    font-family: 'Segoe UI', sans-serif;
+    font-family: 'Segoe UI', 'Malgun Gothic', sans-serif; /* 한글 호환을 위해 Malgun Gothic 추가 */
     font-size: 14px;
     background-color: #f7f8fa; /* Light background */
     color: #2d2d2f;  /* Softer dark text color */
 }
-
-/* QMainWindow */
+/* ---------- QMainWindow ----------- */
+/* AllTable, ImageTable 버튼이 있는 줄에 대한 디자인 */
 QMainWindow {
-    background-color: #ffffff;
+    background-color: #f7f8fa;
     border-radius: 8px;
     padding: 10px;
+    outline: none; /* Removes focus outline */
 }
-
-/* QMenu (Menu Dropdown) */
+/* ------------------------------ */
+/* ---------- QMenuBar ---------- */
+/* 파일, 파일 선택 란에 대한 디자인 */
 QMenuBar {
     background-color: #ffffff;
     color: #1d1d1f;
@@ -26,10 +28,14 @@ QMenuBar::item {
     padding: 6px 12px;
 }
 QMenuBar::item:selected {
-    background-color: #007AFF;  /* Highlighted Toss Blue */
+    background-color: #007AFF;  /* Highlighted Blue */
     color: #ffffff;
     border-radius: 5px;
+    outline: none;
 }
+/* ------------------------------ */
+/* ---------- QMenu::item (Menu Item) ---------- */
+/* 파일 버튼 누르면 뜨는 '파일 선택' 에 대한 디자인 사항들*/
 QMenu {
     background-color: #ffffff; /* White background */
     border: 1px solid #c1c1c6; /* Light border */
@@ -38,7 +44,6 @@ QMenu {
     padding: 4px 10px; /* Padding around the menu */
 }
 
-/* QMenu::item (Menu Item) */
 QMenu::item {
     background-color: transparent;
     color: #2d2d2f; /* Softer dark text */
@@ -50,9 +55,9 @@ QMenu::item:selected {
     background-color: #005BBB; /* Softer blue for selected menu item */
     color: #ffffff; /* White text when selected */
 }
-
-
-/* QTabWidget */
+/* ------------------------------ */
+/* ---------- QTabWidget ---------- */
+/* ImageTable 버튼 관련 디자인 */
 QTabWidget::pane {
     border: none;
 }
@@ -67,8 +72,9 @@ QTabBar::tab:selected {
     background-color: #005BBB; /* Softer blue */
     color: #ffffff;
 }
-
-/* QLineEdit (Search Input) */
+/* ------------------------------ */
+/* ---------- QLineEdit (Search Input) ---------- */
+/* 검색창 있는 부분의 디자인 영역 */
 QLineEdit {
     background-color: #ffffff;
     border: 1px solid #c1c1c6;
@@ -81,9 +87,10 @@ QLineEdit:focus {
     border: 1px solid #005BBB;
     background-color: #ffffff;
 }
-
-/* QTableView */
-QTableView {
+/* ------------------------------ */
+/* ---------- QTableView ---------- */
+/* DB를 불러오면 각 데이터들을 볼 수 있는 테이블이 나오는 영역의 디자인 */
+QTableView { /* 여기를 봐야 합니다 */
     background-color: #ffffff;
     border: none; /* Border removed for a cleaner look */
     gridline-color: #e0e0e5; /* Thinner, subtle grid lines in light gray */
@@ -97,20 +104,26 @@ QTableView::item {
 }
 QTableView::item:hover {
     background-color: #f9f9fb; /* Slight hover effect */
+    /* 아래로 스크롤 하는 부분에 영향을 주는 영역입니다*/
 }
 QHeaderView::section {
     background-color: #ececec;
     padding: 8px;
     border: none;
     color: #005BBB;
+    font-size: 12px;
 }
 QTableView::item:selected {
     background-color: #cde4ff; /* Softer highlight */
     color: #2d2d2f;
 }
-
-/* QSplitter */
-QSplitter {
+QTableView::item:focus {
+    outline: none;
+    border: none;
+}
+/* ------------------------------ */
+/* ---------- QSplitter ---------- */
+ QSplitter {
     background-color: #ececec;
     border: none;
 }
@@ -120,8 +133,9 @@ QSplitter::handle {
     margin: 1px;
     border-radius: 2px;
 }
-
-/* QLabel (Image Preview and Text Labels) */
+/* ------------------------------ */
+/* ---------- QLabel (Image Preview and Text Labels) ---------- */
+/* 테이블 좌측 영역에 데이터베이스 불러오는 영역*/
 QLabel {
     font-size: 12px;
     color: #2d2d2f;
@@ -135,8 +149,8 @@ QLabel#image_label {
 QLabel#image_label:disabled {
     background-color: #e0e0e5;
 }
-
-/* QTextEdit (Data Preview) */
+/* ------------------------------ */
+/* --------- QTextEdit -> 데이터 프리뷰 영역 ---------- */
 QTextEdit {
     background-color: #ffffff;
     border: 1px solid #c1c1c6;
@@ -144,15 +158,16 @@ QTextEdit {
     padding: 10px;
     color: #2d2d2f;
 }
-
-/* QStatusBar */
+/* ------------------------------ */
+/* --------- QStatusBar ---------- */
 QStatusBar {
     background-color: #f7f8fa;
     color: #005BBB;
     padding: 4px;
 }
-
-/* QPushButton */
+/* ------------------------------ */
+/* --------- QPushButton ---------- */
+/* 이미지 보는 테이블에서 검색, 초기화, 이전이미지, 다음이미지 버튼 디자인 */
 QPushButton {
     background-color: #005BBB;
     color: white;
@@ -171,8 +186,8 @@ QPushButton:disabled {
     background-color: #a8c4e6; /* Softer disabled state */
     color: #ffffff;
 }
-
-/* QFileDialog */
+/* ------------------------------ */
+/* ---------- QFileDialog ---------- */
 QFileDialog {
     background-color: #ffffff;
     color: #2d2d2f;
@@ -191,8 +206,8 @@ QFileDialog QPushButton:hover {
 QFileDialog QPushButton:pressed {
     background-color: #003A7E;
 }
-
-/* Scrollbars */
+/* ------------------------------ */
+/* ---------- Scrollbars ---------- */
 QScrollBar:vertical {
     background: #e0e0e5;
     width: 10px;
@@ -207,3 +222,4 @@ QScrollBar::handle:vertical {
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
     background: none;
 }
+/* ------------------------------ */
