@@ -1,3 +1,5 @@
+# temp-all-fix-cell.py
+
 import shutil
 import os
 
@@ -248,7 +250,7 @@ for table_name in tables:
                     if num_records > largest_record_count:
                         largest_record_count = num_records
                         largest_record_index = idx
-                        largest_record_start_offset = position + 0x18
+                        largest_record_start_offset = page_header_start
 
             print()  # 줄바꿈
 

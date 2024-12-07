@@ -107,7 +107,7 @@ class SQLiteTableModel(QAbstractTableModel):
     def data(self, index, role=Qt.DisplayRole):
         if not index.isValid():
             return None
-        if role == Qt.DisplayRole or role == Qt.EditRole:
+        if role in (Qt.DisplayRole, Qt.EditRole):
             return self._data[index.row()][index.column()]
         return None
 
@@ -122,15 +122,47 @@ class SQLiteTableModel(QAbstractTableModel):
     def flags(self, index):
         if not index.isValid():
             return Qt.NoItemFlags
-        return Qt.ItemIsSelectable | Qt.ItemIsEnabled
+        return Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable
 
     def setData(self, index, value, role=Qt.EditRole):
         if role == Qt.EditRole and index.isValid():
-            row, column = index.row(), index.column()
+            # proxy_model에서 source_model로 매핑
+            if hasattr(self, "proxy_model"):
+                source_index = self.proxy_model.mapToSource(index)
+                row, column = source_index.row(), source_index.column()
+            else:
+                row, column = index.row(), index.column()
+
+            print(f"[DEBUG] setData called for row: {row}, column: {column}")
+            print(f"[DEBUG] Current data before modification: {self._data[row]}")
+
+            # 실제 데이터 업데이트
             self._data[row][column] = value
+            print(f"[DEBUG] Updated data: {self._data[row]}")
+
+            # 데이터 변경 알림
             self.dataChanged.emit(index, index, [Qt.DisplayRole, Qt.EditRole])
             return True
         return False
+
+    def sort(self, column, order=Qt.AscendingOrder):
+        """Sort data by column."""
+        self.layoutAboutToBeChanged.emit()
+        self._data.sort(
+            key=lambda row: (row[column] is None, row[column]),
+            reverse=(order == Qt.DescendingOrder)
+        )
+        self.layoutChanged.emit()
+
+    def removeRow(self, row, parent=QModelIndex()):
+        if 0 <= row < len(self._data):
+            print(f"[DEBUG] Removing row {row}: {self._data[row]}")
+            self.beginRemoveRows(parent, row, row)
+            del self._data[row]
+            self.endRemoveRows()
+            return True
+        return False
+
 
 class WebTableWidget(QWidget):
     def __init__(self, db_path=None, current_mode=None, parent=None):
@@ -201,28 +233,42 @@ class WebTableWidget(QWidget):
         self.filter_browser_data()
 
     def load_data(self):
-        """테이블에 데이터를 로드하고 연관 데이터를 업데이트합니다."""
+        """테이블에 데이터를 로드하면서 연관 데이터를 바로 비교하여 설정합니다."""
         if self.db_path:
-            data, headers = load_web_data(self.db_path)
-            if data:
+            new_data, headers = load_web_data(self.db_path)
+            print(f"[DEBUG] 로드된 데이터 개수: {len(new_data)}")  # 디버깅: 로드된 데이터 개수 확인
+
+            if new_data:
+                # Related Data 열 추가
+                if "Related Data" not in headers:
+                    headers.append("Related Data")
+
+                # 기존 데이터를 유지하고 확장
                 extended_data = []
-                for row in data:
-                    title = row[1]  # 타이틀 열의 인덱스
-                    timestamp = row[2]  # 타임스탬프 열의 인덱스
-                    extended_data.append(list(row) + ["X"])  # 초기 상태를 "X"로 설정
+                for row in new_data:
+                    title = row[1]  # 타이틀
+                    timestamp = row[2]  # 타임스탬프
 
-                headers.append("Related Data")
-                related_data_column_index = len(headers) - 1  # Related Data가 몇 번째 열인지
+                    # Related Data 상태 확인
+                    related_data_status = self.check_related_data(timestamp, title)
 
-                model = SQLiteTableModel(extended_data, headers)
+                    # 기존 행에 상태 추가
+                    extended_data.append(list(row) + [related_data_status])
+
+                # 데이터 모델 갱신
+                self._data = extended_data
+                print(f"[DEBUG] 갱신된 데이터 개수: {len(self._data)}")  # 디버깅
+
+                # 새로운 모델 생성 및 설정
+                model = SQLiteTableModel(self._data, headers)
                 self.proxy_model.setSourceModel(model)
                 self.table_view.setModel(self.proxy_model)
                 self.table_view.resizeColumnToContents(len(headers) - 1)
 
-                # 히스토리 파일이 설정된 경우에만 연관 데이터 상태 업데이트
-                if self.history_db_path:
-                    self.update_related_data_status()
+                print("[DEBUG] 데이터가 성공적으로 로드되었습니다.")
             else:
+                print("[DEBUG] 로드된 데이터가 비어 있습니다.")
+                self._data = []  # 데이터를 초기화
                 self.table_view.setModel(None)
 
     def filter_browser_data(self):
@@ -234,9 +280,6 @@ class WebTableWidget(QWidget):
         """히스토리 DB 파일 경로 설정"""
         self.history_db_path = history_file_path
         print(f"히스토리 파일 경로 설정됨: {self.history_db_path}")
-
-        # 연관 데이터 상태 업데이트
-        self.update_related_data_status()  # 상태 업데이트 호출
 
         # 그 외 필요한 후속 작업
         self.display_related_history_data()  # 필요에 따라 추가
@@ -308,19 +351,18 @@ class WebTableWidget(QWidget):
                 conn.close()
 
     def update_related_data_status(self):
-        """테이블의 각 행에 대해 연관 데이터를 확인하고 상태를 업데이트합니다."""
-        print("[DEBUG] update_related_data_status 호출됨.")  # 디버깅 메시지
+        print("[DEBUG] update_related_data_status 호출됨.")
         if not self.history_db_path:
-            print("히스토리 파일 경로가 설정되지 않았습니다. 연관 데이터 상태 업데이트를 건너뜁니다.")
+            print("[DEBUG] 히스토리 파일 경로가 설정되지 않았습니다.")
             return
 
         model = self.table_view.model()
         if not model:
-            print("테이블 모델이 초기화되지 않았습니다.")
+            print("[DEBUG] 모델이 초기화되지 않았습니다.")
             return
 
-        # "Related Data" 열의 인덱스를 동적으로 확인
-        related_data_column_index = -1  # 기본 값
+        # "Related Data" 열의 인덱스 확인
+        related_data_column_index = -1
         for column_index in range(model.columnCount()):
             header_data = model.headerData(column_index, Qt.Horizontal)
             if header_data == "Related Data":
@@ -331,28 +373,38 @@ class WebTableWidget(QWidget):
             print("[DEBUG] 'Related Data' 열을 찾을 수 없습니다.")
             return
 
+        rows_to_delete = []
+
         for row in range(model.rowCount()):
-            # 타이틀과 타임스탬프 데이터를 가져옵니다.
-            title = model.index(row, 1).data()  # 타이틀 열 (1번째 열)
-            timestamp = model.index(row, 2).data()  # 타임스탬프 열 (2번째 열)
+            title = model.index(row, 1).data()  # 타이틀 열
+            timestamp = model.index(row, 2).data()  # 타임스탬프 열
+            simplified_title = simplify_title(title)
 
-            # 연관 데이터가 있는지 확인
-            related_data_status = self.check_related_data(timestamp, title)
+            if not simplified_title:
+                continue
 
-            # 디버깅 메시지 추가: 각 행의 업데이트 상태 확인
-            print(f"[DEBUG] 행 {row} 업데이트 시도: {related_data_status}")
-            success = model.setData(model.index(row, related_data_column_index), related_data_status)
-            if success:
-                print(f"[DEBUG] 행 {row} 업데이트 성공: {related_data_status}")
-            else:
-                print(f"[DEBUG] 행 {row} 업데이트 실패")
+            # Check if the data is related
+            related_data_status = self.check_related_data(timestamp, simplified_title)
+            current_status = model.index(row, related_data_column_index).data()
 
-            # 모델에 업데이트
-            current_status = model.index(row, related_data_column_index).data()  # 기존 상태 출력
-            print(f"기존 상태: {current_status}, 새 상태: {related_data_status}")
+            # If current status is 'X' but should be 'O', mark for deletion
+            if current_status == "X" and related_data_status == "O":
+                rows_to_delete.append(row)
 
-        # 테이블 뷰를 새로고침하여 변경 사항 반영
-        model.layoutChanged.emit()
+            # Update only if the status changes
+            if current_status != related_data_status:
+                print(f"[DEBUG] 행 {row}의 Related Data 변경: {current_status} -> {related_data_status}")
+                model.setData(
+                    model.index(row, related_data_column_index), related_data_status
+                )
+
+        # Remove rows with 'X' that should not exist
+        for row in reversed(rows_to_delete):  # Reverse to avoid index shifting
+            print(f"[DEBUG] Removing row {row}: {model._data[row]}")
+            model.removeRow(row)
+
+        model.layoutChanged.emit()  # Refresh the view
+        print("[DEBUG] update_related_data_status 완료.")
 
     def display_related_history_data(self, index=None):
         """

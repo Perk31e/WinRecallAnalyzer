@@ -10,7 +10,7 @@ def main(input_db_path):
 
     # 테이블 리스트
     tables = [
-        "App", "WindowCaptureAppRelation", "Web", "WindowCaptureWebRelation",
+        "App", "WindowCaptureAppRelation", 
     ]
 
     # 복사된 데이터베이스 파일 읽기

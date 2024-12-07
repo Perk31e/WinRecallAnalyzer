@@ -2,7 +2,7 @@
 import shutil
 import os
 
-# 사용자 입력을 받아서 경로 지정, 따옴표 제거
+# 사용자 입력을 받아서 db 파일 지정, 따옴표 제거
 input_db_path = input("Input ukg.db path: ").strip('"')
 input_db_wal_path = os.path.join(os.path.dirname(input_db_path), "ukg.db-wal")
 
@@ -132,11 +132,11 @@ for table_name in tables:
             # 첫 번째 바이트가 0D인지 확인
             if page_range[0] == 0x0D:
                 # 네 번째와 다섯 번째 바이트 추출하여 결합하고 정수로 변환
-                record_value = int(format(page_range[3], '02X') + format(page_range[4], '02X'), 16)
+                num_records = int.from_bytes(page_range[3:5], byteorder='big')
 
-                # 가장 큰 레코드 값을 확인
-                if record_value > largest_record_count:
-                    largest_record_count = record_value
+                # 가장 큰 레코드 수를 가진 페이지 식별
+                if num_records > largest_record_count:
+                    largest_record_count = num_records
                     largest_record_index = idx
                     largest_record_start_offset = page_header_start
 
