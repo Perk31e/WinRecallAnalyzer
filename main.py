@@ -170,7 +170,7 @@ class MainWindow(QMainWindow):
             image_token_index = self.proxy_model.index(selected_index.row(), 2)
             image_token = image_token_index.data()
             if image_token and hasattr(self.image_table_tab, 'display_image_from_token'):
-                self.image_table_tab.display_image_from_token(image_token)
+                self.image_table_tab.display_image_from_token_with_index(image_token)
 
     def setup_mode(self):
         """분석 모드 선택 메시지 표시 및 모드 설정"""
@@ -802,10 +802,16 @@ class MainWindow(QMainWindow):
                 if not os.path.exists(image_path):
                     self.image_label.setText(f"이미지 파일을 찾을 수 없습니다: {image_token}")
                     return
+                
+                # 먼저 이미지를 image_label에 표시
                 self.load_image_in_thread(image_path)
+                # 이미지 클릭 이벤트 연결
+                self.image_label.mousePressEvent = lambda e: self.on_image_label_double_click(image_token)
             else:
                 self.image_label.clear()
                 self.image_label.setText("이미지 없음")
+                # 이미지가 없을 때는 클릭 이벤트 제거
+                self.image_label.mousePressEvent = None
             break
 
     def load_image_in_thread(self, image_path):

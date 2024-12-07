@@ -15,6 +15,8 @@ class InternalAuditWidget(QWidget):
         self.current_results = []  # 현재 결과를 저장할 리스트
         self.images_loaded = False  # 이미지 로드 여부 플래그
         self.current_selected_box = None  # 현재 선택된 set-box를 추적하기 위한 변수
+        self.last_clicked_timestamp = None  # 마지막으로 클릭한 이미지의 토릃타임스탬프
+        self.last_clicked_token = None      # 마지막으로 클릭한 이미지의 토큰
         self.setup_ui()
 
     def setup_ui(self):
@@ -548,8 +550,9 @@ class InternalAuditWidget(QWidget):
             print("[Internal Audit] DB 경로가 설정되지 않았습니다.")
 
     def handle_image_click(self, clicked_box, timestamp):
+        """이미지 클릭 이벤트 처리"""
         if self.current_selected_box:
-            # 이전에 선택한 박스를 기본 스타일(흰색 바탕, 연한 회색 테두리)로 복원
+            # 이전에 선택한 박스를 기본 스타일로 복원
             self.current_selected_box.setStyleSheet("""
                 border: 1px solid #e0e0e0;
                 padding: 0px;
@@ -557,7 +560,7 @@ class InternalAuditWidget(QWidget):
                 background-color: #ffffff;
             """)
 
-        # 현재 클릭한 박스에 파란색 테두리 적용 (평평한 형태 유지)
+        # 현재 클릭한 박스에 파란색 테두리 적용
         clicked_box.setStyleSheet("""
             border: 2px solid #0078D7;
             padding: 0px;
@@ -565,5 +568,25 @@ class InternalAuditWidget(QWidget):
             background-color: #ffffff;
         """)
 
+        # 같은 이미지를 두 번 클릭했는지 확인
+        if timestamp == self.last_clicked_timestamp:
+            try:
+                conn = sqlite3.connect(self.db_path)
+                cursor = conn.cursor()
+                cursor.execute("SELECT ImageToken FROM WindowCapture WHERE TimeStamp = ?", (timestamp,))
+                result = cursor.fetchone()
+                conn.close()
+
+                if result and result[0]:
+                    main_window = self.window()
+                    if hasattr(main_window, 'tab_widget') and hasattr(main_window, 'image_table_tab'):
+                        main_window.tab_widget.setCurrentWidget(main_window.image_table_tab)
+                        main_window.image_table_tab.display_image_from_token_with_index(result[0])
+                    return
+            except sqlite3.Error as e:
+                print(f"[Internal Audit] 데이터베이스 오류: {e}")
+
+        # 현재 클릭한 이미지 정보 저장
+        self.last_clicked_timestamp = timestamp
         self.current_selected_box = clicked_box
         self.show_ocr_content(timestamp)

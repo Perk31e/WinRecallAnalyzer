@@ -526,3 +526,16 @@ class ImageTableWidget(QWidget):
                 self.auto_move_direction = None
                 self.auto_next_button.setChecked(False)
                 self.auto_next_button.setText("Auto Next =>")
+
+    def display_image_from_token_with_index(self, target_token):
+        """특정 이미지 토큰을 찾아서 해당 인덱스로 이동 후 표시"""
+        if not self.images:
+            return False
+            
+        # 이미지 토큰으로 인덱스 찾기
+        for idx, (_, token) in enumerate(self.images):
+            if token == target_token:
+                self.current_image_index = idx  # 현재 인덱스 업데이트
+                self.display_image_from_token(token)
+                return True
+        return False
