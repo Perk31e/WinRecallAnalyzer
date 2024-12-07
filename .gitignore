@@ -28,5 +28,8 @@ recovered_with_wal.db-wal
 recovered_with_wal.db-shm
 remained.db-wal
 
+# Internal_Code_Temp directory and its contents
+Internal_Code_Temp/
+
 # prefetch output file
 prefetch_output.csv

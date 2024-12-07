@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QTextEdit, QSplitter,
-                             QHBoxLayout, QLabel, QPushButton, QLineEdit, QScrollArea, QGridLayout)
+                             QHBoxLayout, QLabel, QPushButton, QLineEdit, QScrollArea, QGridLayout, QFrame)
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
 import sqlite3
@@ -14,6 +14,7 @@ class InternalAuditWidget(QWidget):
         self.db_path = None  # db_path 초기화
         self.current_results = []  # 현재 결과를 저장할 리스트
         self.images_loaded = False  # 이미지 로드 여부 플래그
+        self.current_selected_box = None  # 현재 선택된 set-box를 추적하기 위한 변수
         self.setup_ui()
 
     def setup_ui(self):
@@ -184,31 +185,74 @@ class InternalAuditWidget(QWidget):
             self.lower_text_box.setText(f"데이터베이스 오류: {e}")
 
     def display_images(self, results):
-        """검색된 이미지를 표시"""
         self.clear_images()
         if not self.db_path:
             print("[Internal Audit] DB 경로가 설정되지 않아 이미지를 표시할 수 없습니다.")
             return
-        self.current_results = results  # 현재 결과 저장
+        self.current_results = results
+        self.current_selected_box = None
 
-        # 이미지 컨테이너의 크기를 가져오기
         container_width = self.image_scroll_area.viewport().width()
         if container_width == 0:
             container_width = self.image_container.width()
-        image_spacing = self.image_layout.spacing()  # 이미지 간의 간격
-        images_per_row = 4  # 한 줄에 표시할 이미지 수
+        image_spacing = self.image_layout.spacing()
+        images_per_row = 4
 
-        # 이미지 크기 계산
-        total_spacing = image_spacing * (images_per_row - 1)  # 양쪽 여백 제외
-        image_width = (container_width - total_spacing) // images_per_row
-        image_width = max(100, image_width)  # 최소 이미지 너비 설정
-
-        # 이미지 높이를 너비의 80%로 설정하여 상하 여백 감소
-        image_height = int(image_width * 0.65)
+        # 고정된 이미지 크기 설정
+        fixed_image_width = container_width // images_per_row - (image_spacing * (images_per_row - 1) // images_per_row)
+        fixed_image_height = int(fixed_image_width * 0.65)
+        timestamp_height = 15  # 타임스탬프 박스의 고정 높이
 
         image_dir = os.path.join(os.path.dirname(self.db_path), "ImageStore")
-        
+
         for index, (timestamp, image_token) in enumerate(results):
+            set_box = QFrame()
+            set_layout = QVBoxLayout(set_box)
+            set_layout.setSpacing(0)
+            set_layout.setContentsMargins(0, 0, 0, 0)
+            set_layout.setAlignment(Qt.AlignCenter)  # 레이아웃 전체 중앙 정렬
+            
+            # 3D 효과 제거: NoFrame + Plain
+            set_box.setFrameShape(QFrame.NoFrame)
+            set_box.setFrameShadow(QFrame.Plain)
+            
+            # 평평한 흰색 바탕에 연한 회색 테두리
+            set_box.setStyleSheet("""
+                border: 1px solid #e0e0e0;
+                padding: 0px;
+                margin: 0px;
+                background-color: #ffffff;
+            """)
+
+            image_box = QLabel()
+            image_box.setAlignment(Qt.AlignCenter)
+            image_box.setContentsMargins(0, 0, 0, 0)
+            image_box.setStyleSheet("border: none; background-color: #ffffff;")
+
+            timestamp_box = QLabel()
+            timestamp_box.setAlignment(Qt.AlignCenter)  # Qt.AlignCenter는 수직/수평 모두 중앙 정렬
+            timestamp_box.setContentsMargins(0, 0, 0, 0)
+            timestamp_box.setStyleSheet("""
+                border: none; 
+                border-top: 1px solid #e0e0e0; 
+                background-color: #ffffff;
+                padding: 0px;
+                font-size: 12pt;
+                font-weight: bold;
+            """)
+            timestamp_box.setFixedHeight(timestamp_height)
+
+            # 타임스탬프 박스를 위한 컨테이너 생성
+            timestamp_container = QWidget()
+            timestamp_layout = QVBoxLayout(timestamp_container)
+            timestamp_layout.setContentsMargins(0, 0, 0, 0)
+            timestamp_layout.setSpacing(0)
+            timestamp_layout.addWidget(timestamp_box, 0, Qt.AlignCenter)  # 수직 중앙 정렬
+            
+            dt = datetime.fromtimestamp(timestamp / 1000)
+            formatted_time = dt.strftime("%Y-%m-%d %H:%M:%S")
+            timestamp_box.setText(formatted_time)
+
             base_image_path = os.path.join(image_dir, image_token)
             base_image_path = os.path.normpath(base_image_path)
             possible_extensions = ['', '.jpg', '.jpeg', '.png']
@@ -221,36 +265,31 @@ class InternalAuditWidget(QWidget):
                     break
 
             if image_path_with_ext:
-                try:
-                    pixmap = QPixmap(image_path_with_ext)
-                    if not pixmap.isNull():
-                        label = QLabel()
-                        label.setContentsMargins(0, 0, 0, 0)
-                        label.setAlignment(Qt.AlignCenter)
-                        label.setStyleSheet("padding: 0px; margin: 0px;")
+                pixmap = QPixmap(image_path_with_ext)
+                if not pixmap.isNull():
+                    scaled_pixmap = pixmap.scaled(
+                        fixed_image_width, fixed_image_height,  # 고정된 크기 사용
+                        Qt.KeepAspectRatio,
+                        Qt.SmoothTransformation
+                    )
+                    image_box.setPixmap(scaled_pixmap)
+                    timestamp_box.setFixedWidth(fixed_image_width)  # 고정된 너비 사용
+                    image_box.setFixedSize(fixed_image_width, fixed_image_height)  # 고정된 크기 사용
 
-                        scaled_pixmap = pixmap.scaled(
-                            image_width, image_height, Qt.KeepAspectRatio, Qt.SmoothTransformation
-                        )
-                        label.setPixmap(scaled_pixmap)
-                        label.setFixedSize(image_width, image_height)
-                        
-                        # 이미지 클릭 이벤트 추가
-                        label.mousePressEvent = lambda e, t=timestamp: self.show_ocr_content(t)
-                        
-                        # 행과 열 계산
-                        row = index // images_per_row
-                        col = index % images_per_row
-                        self.image_layout.addWidget(label, row, col)
-                    else:
-                        print(f"[Internal Audit] 이미지 로드 실패 (픽스맵이 NULL): {image_path_with_ext}")
-                        continue
-                except Exception as e:
-                    print(f"[Internal Audit] 이미지 처리 중 오류 발생: {str(e)}")
-                    continue
+                    # 클릭 이벤트 연결
+                    set_box.mousePressEvent = lambda e, box=set_box, t=timestamp: self.handle_image_click(box, t)
+
+                    set_layout.addWidget(image_box)
+                    set_layout.addWidget(timestamp_container)  # timestamp_box 대신 container 추가
+
+                    row = index // images_per_row
+                    col = index % images_per_row
+                    self.image_layout.addWidget(set_box, row, col)
+                else:
+                    print("[Internal Audit] 이미지 로드 실패 (픽스맵이 NULL):", image_path_with_ext)
             else:
-                print(f"[Internal Audit] 이미지 파일을 찾을 수 없음: {base_image_path}")
-                continue
+                print("[Internal Audit] 이미지 파일을 찾을 수 없음:", base_image_path)
+
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -260,6 +299,7 @@ class InternalAuditWidget(QWidget):
 
     def clear_images(self):
         """이미지 레이아웃 초기화"""
+        self.current_selected_box = None  # 선택 초기화
         for i in reversed(range(self.image_layout.count())):
             widget = self.image_layout.itemAt(i).widget()
             if widget is not None:
@@ -356,7 +396,7 @@ class InternalAuditWidget(QWidget):
         if not text:
             return ""
             
-        # 허용할 특수문자 목록
+        # 허용할 수문자 목록
         allowed_chars = r'[()<>\[\];/]'
         
         # 1. 연속된 공백을 하나로 치환
@@ -464,14 +504,14 @@ class InternalAuditWidget(QWidget):
                 # HTML 형식으로 설정
                 self.lower_text_box.setHtml(output_text)
             else:
-                self.lower_text_box.setHtml("<p>내용을 찾을 수 없습니다.</p>")
+                self.lower_text_box.setHtml("<p>내내용을 찾을 수 없습니다.</p>")
                 
         except sqlite3.Error as e:
             print(f"[Internal Audit] 데이터베이스 오류: {e}")
             self.lower_text_box.setHtml(f"<p>데이터베이스 오류: {e}</p>")
 
     def load_all_images(self):
-        """모든 이미지를 로드"""
+        """모든 이미미지를 로드"""
         if self.db_path:
             try:
                 print("[Internal Audit] 모든 이미지 로드 시도")
@@ -507,3 +547,23 @@ class InternalAuditWidget(QWidget):
         else:
             print("[Internal Audit] DB 경로가 설정되지 않았습니다.")
 
+    def handle_image_click(self, clicked_box, timestamp):
+        if self.current_selected_box:
+            # 이전에 선택한 박스를 기본 스타일(흰색 바탕, 연한 회색 테두리)로 복원
+            self.current_selected_box.setStyleSheet("""
+                border: 1px solid #e0e0e0;
+                padding: 0px;
+                margin: 0px;
+                background-color: #ffffff;
+            """)
+
+        # 현재 클릭한 박스에 파란색 테두리 적용 (평평한 형태 유지)
+        clicked_box.setStyleSheet("""
+            border: 2px solid #0078D7;
+            padding: 0px;
+            margin: 0px;
+            background-color: #ffffff;
+        """)
+
+        self.current_selected_box = clicked_box
+        self.show_ocr_content(timestamp)
