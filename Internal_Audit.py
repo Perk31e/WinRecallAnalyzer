@@ -6,6 +6,7 @@ import sqlite3
 import os
 from datetime import datetime
 from FlowLayout import FlowLayout  # FlowLayout 임포트
+import re
 
 class InternalAuditWidget(QWidget):
     def __init__(self):
@@ -100,7 +101,7 @@ class InternalAuditWidget(QWidget):
         """OCR 검색 수행"""
         keyword = self.keyword_search.text().strip()
         if not keyword:
-            self.load_all_images()  # 검색어가 없으면 모든 이미지 로드
+            self.load_all_images()
             return
         
         if self.db_path is None:
@@ -112,25 +113,68 @@ class InternalAuditWidget(QWidget):
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
-            # c2 컬럼만 검색하도록 수정
-            query = """
-            SELECT wc.TimeStamp, wc.ImageToken
-            FROM WindowCapture wc
-            JOIN WindowCaptureTextIndex_content wctc ON wc.Id = wctc.c0
-            WHERE wctc.c2 LIKE ?
-            ORDER BY wc.TimeStamp ASC;
-            """
-            
-            wildcard_keyword = f"%{keyword}%"
-            cursor.execute(query, (wildcard_keyword,))
+            # AND 연산 (&&)
+            if "&&" in keyword:
+                terms = [term.strip() for term in keyword.split("&&")]
+                params = []
+                conditions = []
+                for term in terms:
+                    params.append(f"%{term}%")
+                    conditions.append(f"EXISTS (SELECT 1 FROM WindowCaptureTextIndex_content wctc2 WHERE wctc2.c0 = wc.Id AND wctc2.c2 LIKE ?)")
+                
+                query = f"""
+                SELECT DISTINCT wc.TimeStamp, wc.ImageToken
+                FROM WindowCapture wc
+                WHERE {" AND ".join(conditions)}
+                ORDER BY wc.TimeStamp ASC;
+                """
+                cursor.execute(query, params)
+                
+            # OR 연산 (||)
+            elif "||" in keyword:
+                terms = [term.strip() for term in keyword.split("||")]
+                conditions = []
+                params = []
+                for term in terms:
+                    conditions.append("wctc.c2 LIKE ?")
+                    params.append(f"%{term}%")
+                
+                query = f"""
+                SELECT DISTINCT wc.TimeStamp, wc.ImageToken
+                FROM WindowCapture wc
+                JOIN WindowCaptureTextIndex_content wctc ON wc.Id = wctc.c0
+                WHERE {" OR ".join(conditions)}
+                ORDER BY wc.TimeStamp ASC;
+                """
+                cursor.execute(query, params)
+                
+            # 일반 검색
+            else:
+                query = """
+                SELECT DISTINCT wc.TimeStamp, wc.ImageToken
+                FROM WindowCapture wc
+                JOIN WindowCaptureTextIndex_content wctc ON wc.Id = wctc.c0
+                WHERE wctc.c2 LIKE ?
+                ORDER BY wc.TimeStamp ASC;
+                """
+                cursor.execute(query, (f"%{keyword}%",))
+
             results = cursor.fetchall()
             conn.close()
 
             print(f"[Internal Audit] 검색 결과 수: {len(results)}개")
 
             if results:
-                self.display_images(results)
-                self.lower_text_box.setText(f"총 {len(results)}개의 결과가 검색되었습니다.")
+                # 중복 제거 (TimeStamp 기준)
+                unique_results = []
+                seen_tokens = set()
+                for timestamp, token in results:
+                    if token not in seen_tokens:
+                        unique_results.append((timestamp, token))
+                        seen_tokens.add(token)
+                
+                self.display_images(unique_results)
+                self.lower_text_box.setText(f"총 {len(unique_results)}개의 결과가 검색되었습니다. (중복 제거됨)")
             else:
                 self.clear_images()
                 self.lower_text_box.setText("검색 결과가 없습니다.")
@@ -233,8 +277,12 @@ class InternalAuditWidget(QWidget):
             self.display_images(self.current_results)
 
     def showEvent(self, event):
+        """
+        위젯이 화면에 표시될 때 호출되는 이벤트 핸들러
+        위젯이 처음 표시될 때만 이미지를 로드하여 불필요한 중복 로딩 방지
+        """
         super().showEvent(event)
-        # 처음으로 위젯이 표시될 때만 이미지를 로드
+        # 이미지가 아직 로드되지 않은 경우에만 초기 데이터 로드 수행
         if not self.images_loaded:
             self.images_loaded = True
             self.load_initial_data()
@@ -303,18 +351,62 @@ class InternalAuditWidget(QWidget):
 
         return filtered_results
 
+    def clean_ocr_text(self, text):
+        """OCR 텍스트를 정제하는 함수"""
+        if not text:
+            return ""
+            
+        # 허용할 특수문자 목록
+        allowed_chars = r'[()<>\[\];/]'
+        
+        # 1. 연속된 공백을 하나로 치환
+        text = re.sub(r'\s+', ' ', text)
+        
+        # 2. 허용된 특수문자는 보존하면서 나머지 텍스트 정제
+        cleaned_text = ''
+        for line in text.split('\n'):
+            # 특수문자와 기본 텍스트 보존
+            cleaned_line = re.sub(r'[^a-zA-Z가-힣0-9\s,.:()<>\[\];/]', '', line)
+            # 앞뒤 공백 제거
+            cleaned_line = cleaned_line.strip()
+            if cleaned_line:
+                cleaned_text += cleaned_line + '\n'
+        
+        return cleaned_text.strip()
+
     def show_ocr_content(self, timestamp):
         """선택된 이미지의 OCR 내용을 표시"""
         try:
-            print(f"[Internal Audit] OCR 내용 조회 - TimeStamp: {timestamp}")  # 디버깅용
+            print(f"[Internal Audit] OCR 내용 조회 - TimeStamp: {timestamp}")
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
-            # 쿼리 수정
+            # 현재 검색어 가져오기
+            current_search = self.keyword_search.text().strip()
+            search_terms = []
+            if "&&" in current_search:
+                search_terms = [term.strip() for term in current_search.split("&&")]
+            elif "||" in current_search:
+                search_terms = [term.strip() for term in current_search.split("||")]
+            elif current_search:
+                search_terms = [current_search]
+            
             query = """
-            SELECT GROUP_CONCAT(wctc.c2, ' ') as ocr_text
+            SELECT 
+                wc.TimeStamp,
+                wc.WindowTitle,
+                GROUP_CONCAT(DISTINCT a.Name) as app_names,
+                GROUP_CONCAT(DISTINCT w.Uri) as web_uris,
+                GROUP_CONCAT(DISTINCT f.Path) as file_paths,
+                GROUP_CONCAT(wctc.c2, ' ') as ocr_text
             FROM WindowCapture wc
-            JOIN WindowCaptureTextIndex_content wctc ON wc.Id = wctc.c0
+            LEFT JOIN WindowCaptureAppRelation wcar ON wc.Id = wcar.WindowCaptureId
+            LEFT JOIN App a ON wcar.AppId = a.Id
+            LEFT JOIN WindowCaptureWebRelation wcwr ON wc.Id = wcwr.WindowCaptureId
+            LEFT JOIN Web w ON wcwr.WebId = w.Id
+            LEFT JOIN WindowCaptureFileRelation wcfr ON wc.Id = wcfr.WindowCaptureId
+            LEFT JOIN File f ON wcfr.FileId = f.Id
+            LEFT JOIN WindowCaptureTextIndex_content wctc ON wc.Id = wctc.c0
             WHERE wc.TimeStamp = ?
             GROUP BY wc.Id;
             """
@@ -323,17 +415,60 @@ class InternalAuditWidget(QWidget):
             result = cursor.fetchone()
             conn.close()
 
-            print(f"[Internal Audit] 쿼리 결과: {result}")  # 디버깅용
-
-            if result and result[0]:
-                ocr_text = result[0]
-                self.lower_text_box.setText(f"OCR 내용:\n{ocr_text}")
+            if result:
+                timestamp, window_title, app_names, web_uris, file_paths, ocr_text = result
+                
+                # Unix timestamp를 datetime으로 변환
+                dt = datetime.fromtimestamp(timestamp / 1000)
+                formatted_time = dt.strftime("%Y-%m-%d %H:%M:%S")
+                
+                # 결과 텍스트 구성 (HTML 형식 사용)
+                output_text = f"<p>Time: {formatted_time}</p>"
+                
+                if app_names:
+                    output_text += f"<p>애플리케이션 명: {app_names}</p>"
+                
+                if web_uris:
+                    output_text += f"<p>Web Uri: {web_uris}</p>"
+                    
+                if file_paths:
+                    output_text += f"<p>File Path: {file_paths}</p>"
+                
+                if window_title:
+                    output_text += f"<p>Window Title: {window_title}</p>"
+                    
+                if ocr_text:
+                    # 검색어 강조 처리
+                    highlighted_text = ocr_text
+                    if search_terms:
+                        # 검색어 목록을 정규식 패턴으로 변환
+                        pattern = '|'.join(map(re.escape, search_terms))
+                        # 대소문자 구분 없이 검색어 찾기
+                        highlighted_text = re.sub(
+                            f'({pattern})', 
+                            r'<b>\1</b>', 
+                            highlighted_text, 
+                            flags=re.IGNORECASE
+                        )
+                    
+                    # OCR 텍스트 정제 (검색어 강조 이후)
+                    cleaned_text = self.clean_ocr_text(highlighted_text)
+                    
+                    # 검색어 정보 추가
+                    if search_terms:
+                        search_terms_str = ' && '.join(f"<b>{term}</b>" for term in search_terms)
+                        output_text += f"<p>검색어 ({search_terms_str})가 포함된 이미지입니다.</p>"
+                    
+                    output_text += f"<p><br>OCR 출력물:</p><p>{cleaned_text}</p>"
+                
+                # HTML 형식으로 설정
+                self.lower_text_box.setHtml(output_text)
             else:
-                self.lower_text_box.setText("OCR 내용을 찾을 수 없습니다.")
+                self.lower_text_box.setHtml("<p>내용을 찾을 수 없습니다.</p>")
                 
         except sqlite3.Error as e:
             print(f"[Internal Audit] 데이터베이스 오류: {e}")
-            self.lower_text_box.setText(f"데이터베이스 오류: {e}")
+            self.lower_text_box.setHtml(f"<p>데이터베이스 오류: {e}</p>")
 
     def load_all_images(self):
         """모든 이미지를 로드"""
@@ -371,3 +506,4 @@ class InternalAuditWidget(QWidget):
                 self.lower_text_box.setText(f"데이터베이스 오류: {e}")
         else:
             print("[Internal Audit] DB 경로가 설정되지 않았습니다.")
+
