@@ -26,13 +26,17 @@ pip install -r requirements.txt
 
 ## TO DO LIST
 
-- [x] Implement All Table
-- [x] Implement Image Table
-- [ ] Implement File Table
-- [ ] Implement Web Table
-- [ ] Implement App Table
+- [x] Implement All Tab
+- [x] Implement Image Tab
+- [ ] Implement File Tab
+- [ ] Implement Web Tab
+- [ ] Implement App Tab
+- [ ] Implement Recovery Tab
+- [ ] Implement InternalAudit Tab
 - [ ] Add SRUM Analysis
-- [ ] Add Initial Recovery Results
+- [ ] Add Prefetch Analysis
+- [ ] Modify Qss Design
+- [X] Add Initial Recovery Results
 - [ ] Convert .py to .exe binary file
 
 ## License
