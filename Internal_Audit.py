@@ -215,10 +215,15 @@ class InternalAuditWidget(QWidget):
         # 스크롤바 너비를 고려하여 컨테이너 너비 조정 (스크롤바의 폭까지 고려해야 이미지 선택해서 파란생 상자의 오른쪽이 잘려서 보이는걸 방지함)
         scrollbar_width = self.image_scroll_area.verticalScrollBar().width()
         adjusted_container_width = container_width - (scrollbar_width // 3) # 3으로 나눠야 적당해보였음 (4로 나누면 파란상자가 살짝 잘려보임)
+
+        # 컨테이너의 최소 여백 설정
+        min_margin = 10  # 양쪽 여백
+        adjusted_container_width = adjusted_container_width - (min_margin * 2)
+        
         # 이미지가 4개 이상일 때의 크기를 기준으로 고정
         fixed_image_width = (adjusted_container_width - (image_spacing * (images_per_row - 1))) // images_per_row
         fixed_image_height = int(fixed_image_width * 0.65)
-        timestamp_height = 15
+        timestamp_height = 17
 
         # 중앙 정렬을 위한 컨테이너 생성
         center_container = QWidget()
@@ -337,12 +342,6 @@ class InternalAuditWidget(QWidget):
         """검색 초기화"""
         self.keyword_search.clear()
         self.load_all_images()  # 초기화 시 모든 이미지 로드
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        # 창 크기 변경 시 이미지를 다시 표시
-        if self.current_results and event.oldSize().width() != event.size().width():
-            self.display_images(self.current_results)
 
     def showEvent(self, event):
         """
