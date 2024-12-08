@@ -576,6 +576,9 @@ class InternalAuditWidget(QWidget):
             background-color: #ffffff;
         """)
 
+        # 클릭한 박스를 맨 앞으로 이동
+        clicked_box.raise_()
+
         # 같은 이미지를 두 번 클릭했는지 확인
         if timestamp == self.last_clicked_timestamp:
             try:
