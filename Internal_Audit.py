@@ -1,3 +1,4 @@
+# Internal_Audit.py
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QTextEdit, QSplitter,
                              QHBoxLayout, QLabel, QPushButton, QLineEdit, QScrollArea, QGridLayout, QFrame)
 from PySide6.QtCore import Qt
@@ -585,28 +586,9 @@ class InternalAuditWidget(QWidget):
 
     def handle_image_click(self, clicked_box, timestamp):
         """이미지 클릭 이벤트 처리"""
-        if self.current_selected_box:
-            # 이전에 선택한 박스를 기본 스타일로 복원
-            self.current_selected_box.setStyleSheet("""
-                border: 1px solid #e0e0e0;
-                padding: 0px;
-                margin: 0px;
-                background-color: #ffffff;
-            """)
-
-        # 현재 클릭한 박스에 파란색 테두리 적용
-        clicked_box.setStyleSheet("""
-            border: 2px solid #0078D7;
-            padding: 0px;
-            margin: 0px;
-            background-color: #ffffff;
-        """)
-
-        # 클릭한 박스를 맨 앞으로 이동
-        clicked_box.raise_()
-
-        # 같은 이미지를 두 번 클릭했는지 확인
-        if timestamp == self.last_clicked_timestamp:
+        # 이미 선택된 이미지를 다시 클릭했는지 확인
+        if self.current_selected_box == clicked_box:
+            # 더블클릭으로 간주하고 ImageTable로 이동
             try:
                 conn = sqlite3.connect(self.db_path)
                 cursor = conn.cursor()
@@ -622,8 +604,28 @@ class InternalAuditWidget(QWidget):
                     return
             except sqlite3.Error as e:
                 print(f"[Internal Audit] 데이터베이스 오류: {e}")
+        
+        # 단일 클릭 처리
+        if self.current_selected_box:
+            # 이전에 선택한 박스를 기본 스타일로 복원
+            self.current_selected_box.setStyleSheet("""
+                border: 1px solid #e0e0e0;
+                padding: 0px;
+                margin: 1px;
+                background-color: #ffffff;
+            """)
+
+        # 현재 클릭한 박스에 파란색 테두리 적용
+        clicked_box.setStyleSheet("""
+            border: 2px solid #0078D7;
+            padding: 0px;
+            margin: 0px;
+            background-color: #ffffff;
+        """)
+
+        # 클릭한 박스를 맨 앞으로 이동
+        clicked_box.raise_()
 
         # 현재 클릭한 이미지 정보 저장
-        self.last_clicked_timestamp = timestamp
         self.current_selected_box = clicked_box
         self.show_ocr_content(timestamp)
