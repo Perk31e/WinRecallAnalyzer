@@ -209,20 +209,32 @@ class InternalAuditWidget(QWidget):
         container_width = self.image_scroll_area.viewport().width()
         if container_width == 0:
             container_width = self.image_container.width()
-        image_spacing = self.image_layout.spacing()
+            
+        # 디버깅을 위한 로그 추가
+        print(f"[Internal Audit] 컨테이너 너비: {container_width}")
+        print(f"[Internal Audit] 스크롤 영역 너비: {self.image_scroll_area.width()}")
+        print(f"[Internal Audit] 뷰포트 너비: {self.image_scroll_area.viewport().width()}")
+        print(f"[Internal Audit] 이미지 컨테이너 너비: {self.image_container.width()}")
+
+        selection_border_width = 2  # 선택 상자의 테두리 두께
+        grid_spacing = selection_border_width * 2  # 테두리 두께의 2배로 간격 설정
+        self.image_layout.setSpacing(grid_spacing)  # 전체 간격 설정
+        self.image_layout.setHorizontalSpacing(grid_spacing)  # 수평 간격 설정
+        self.image_layout.setVerticalSpacing(0)  # 수직 간격은 0으로 유지
+        self.image_layout.setContentsMargins(0, 0, 0, 0)  # 레이아웃의 여백 제거
         images_per_row = 4
 
-        # 스크롤바 너비를 고려하여 컨테이너 너비 조정 (스크롤바의 폭까지 고려해야 이미지 선택해서 파란생 상자의 오른쪽이 잘려서 보이는걸 방지함)
-        scrollbar_width = self.image_scroll_area.verticalScrollBar().width()
-        adjusted_container_width = container_width - (scrollbar_width // 3) # 3으로 나눠야 적당해보였음 (4로 나누면 파란상자가 살짝 잘려보임)
-
-        # 컨테이너의 최소 여백 설정
-        min_margin = 10  # 양쪽 여백
-        adjusted_container_width = adjusted_container_width - (min_margin * 2)
+        # 스크롤바 너비를 10px로 고정
+        scrollbar_width = 10  # 실제 스크롤바 너비를 고정값으로 설정
+        print(f"[Internal Audit] 스크롤바 너비: {scrollbar_width}")
+        
+        adjusted_container_width = container_width - scrollbar_width - grid_spacing
+        print(f"[Internal Audit] 조정된 컨테이너 너비: {adjusted_container_width}")
         
         # 이미지가 4개 이상일 때의 크기를 기준으로 고정
-        fixed_image_width = (adjusted_container_width - (image_spacing * (images_per_row - 1))) // images_per_row
-        fixed_image_height = int(fixed_image_width * 0.65)
+        fixed_image_width = (adjusted_container_width - (grid_spacing * (images_per_row - 1))) // images_per_row
+        print(f"[Internal Audit] 계산된 이미지 너비: {fixed_image_width}")
+        fixed_image_height = int(fixed_image_width * 0.7)
         timestamp_height = 17
 
         # 중앙 정렬을 위한 컨테이너 생성
@@ -239,13 +251,9 @@ class InternalAuditWidget(QWidget):
             set_layout.setContentsMargins(0, 0, 0, 0)
             set_layout.setAlignment(Qt.AlignCenter)  # 레이아웃 전체 중앙 정렬
             
-            # 3D 효과 제거: NoFrame + Plain
-            set_box.setFrameShape(QFrame.NoFrame)
-            set_box.setFrameShadow(QFrame.Plain)
-            
-            # 평평한 흰색 바탕에 연한 회색 테두리
+            # 처음부터 2px의 투명한 테두리를 가지도록 설정
             set_box.setStyleSheet("""
-                border: 1px solid #e0e0e0;
+                border: 2px solid transparent;  /* 투명한 테두리로 공간 유지 */
                 padding: 0px;
                 margin: 0px;
                 background-color: #ffffff;
@@ -605,14 +613,19 @@ class InternalAuditWidget(QWidget):
                 print(f"[Internal Audit] 데이터베이스 오류: {e}")
         
         # 단일 클릭 처리
-        if self.current_selected_box:
-            # 이전에 선택한 박스를 기본 스타일로 복원
-            self.current_selected_box.setStyleSheet("""
-                border: 1px solid #e0e0e0;
-                padding: 0px;
-                margin: 1px;
-                background-color: #ffffff;
-            """)
+        try:
+            # 이전 선택된 박스가 유효한지 확인
+            if self.current_selected_box and self.current_selected_box.parent():
+                # 이전에 선택한 박스를 기본 스타일로 복원
+                self.current_selected_box.setStyleSheet("""
+                    border: 2px solid transparent;  /* 투명한 테두리로 공간 유지 */
+                    padding: 0px;
+                    margin: 0px;
+                    background-color: #ffffff;
+                """)
+        except RuntimeError:
+            # 이전 선택된 박스가 이미 삭제된 경우
+            pass
 
         # 현재 클릭한 박스에 파란색 테두리 적용
         clicked_box.setStyleSheet("""
