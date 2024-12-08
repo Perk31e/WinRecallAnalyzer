@@ -57,7 +57,13 @@ class ImageTableWidget(QWidget):
         search_group.addWidget(self.end_time)
 
         # 키워드 입력 박스 추가
-        search_group.addWidget(QLabel("검색어:"))
+        search_label = QLabel("검색어:")
+        search_label.setToolTip("search example:\n"
+                              "Single Search: 검색어\n"
+                              "AND Search: 검색어1 && 검색어2\n"
+                              "OR Search: 검색어1 || 검색어2")
+        search_group.addWidget(search_label)
+        
         self.keyword_search = QLineEdit()
         self.keyword_search.setPlaceholderText("OCR 검색")
         self.keyword_search.setFixedWidth(150)
