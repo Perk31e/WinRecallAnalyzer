@@ -205,11 +205,9 @@ class InternalAuditWidget(QWidget):
         self.current_results = results
         self.current_selected_box = None
 
-        # 고정된 이미지 크기 계산
-        container_width = self.image_scroll_area.viewport().width()
-        if container_width == 0:
-            container_width = self.image_container.width()
-            
+        # 컨테이너 너비 계산 방식 수정
+        container_width = self.image_scroll_area.width() - 12  # 스크롤바 영역을 명시적으로 제외
+        
         # 디버깅을 위한 로그 추가
         print(f"[Internal Audit] 컨테이너 너비: {container_width}")
         print(f"[Internal Audit] 스크롤 영역 너비: {self.image_scroll_area.width()}")
@@ -225,9 +223,10 @@ class InternalAuditWidget(QWidget):
         images_per_row = 4
 
         # 스크롤바 너비를 10px로 고정
-        scrollbar_width = 10  # 실제 스크롤바 너비를 고정값으로 설정
+        scrollbar_width = 10
         print(f"[Internal Audit] 스크롤바 너비: {scrollbar_width}")
         
+        # 컨테이너 너비 조정
         adjusted_container_width = container_width - scrollbar_width - grid_spacing
         print(f"[Internal Audit] 조정된 컨테이너 너비: {adjusted_container_width}")
         
@@ -365,37 +364,8 @@ class InternalAuditWidget(QWidget):
     def load_initial_data(self):
         """초기 데이터 로드"""
         if self.db_path:
-            try:
-                print("[Internal Audit] 초기 데이터 로드 시도")
-                conn = sqlite3.connect(self.db_path)
-                cursor = conn.cursor()
-                
-                # 모든 이미지 토큰을 가져오는 쿼리
-                query = """
-                SELECT wc.TimeStamp, wc.ImageToken
-                FROM WindowCapture wc
-                WHERE wc.ImageToken IS NOT NULL
-                ORDER BY wc.TimeStamp ASC;
-                """
-                
-                cursor.execute(query)
-                results = cursor.fetchall()
-                conn.close()
-
-                print(f"[Internal Audit] 초기 데이터 로드 완료: {len(results)}개 이미지")
-
-                if results:
-                    # 이미지 파일이 존재하는 것만 필터링
-                    filtered_results = self.filter_existing_images(results)
-                    self.display_images(filtered_results)
-                    self.lower_text_box.setText(f"총 {len(filtered_results)}개의 이미지가 로드되었습니다.")
-                else:
-                    print("[Internal Audit] 표시할 이미지가 없습니다.")
-                    self.lower_text_box.setText("표시할 이미지가 없습니다.")
-                    
-            except sqlite3.Error as e:
-                print(f"[Internal Audit] 데이터베이스 오류: {e}")
-                self.lower_text_box.setText(f"데이터베이스 오류: {e}")
+            print("[Internal Audit] 초기 데이터 로드 시도")
+            self.load_all_images()
         else:
             print("[Internal Audit] DB 경로가 설정되지 않았습니다.")
 
