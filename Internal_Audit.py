@@ -27,10 +27,20 @@ class InternalAuditWidget(QWidget):
         search_layout = QHBoxLayout()
         
         # 키워드 입력 박스 추가
-        search_layout.addWidget(QLabel("검색어:"))
+        search_label = QLabel("검색어:")
+        search_label.setToolTip("search example:\n"
+                              "Single Search: 검색어\n"
+                              "AND Search: 검색어1 && 검색어2\n"
+                              "OR Search: 검색어1 || 검색어2")
+        search_layout.addWidget(search_label)
+        
         self.keyword_search = QLineEdit()
-        self.keyword_search.setPlaceholderText("OCR 검색")
-        self.keyword_search.setFixedWidth(200)
+        self.keyword_search.setPlaceholderText("검색어 입력")
+        self.keyword_search.setFixedWidth(150)
+        self.keyword_search.setToolTip("search example:\n"
+                                     "Single Search: 검색어\n"
+                                     "AND Search: 검색어1 && 검색어2\n"
+                                     "OR Search: 검색어1 || 검색어2")
         search_layout.addWidget(self.keyword_search)
 
         # Enter 키 시 search_images 호출
@@ -194,19 +204,25 @@ class InternalAuditWidget(QWidget):
         self.current_results = results
         self.current_selected_box = None
 
+        # 고정된 이미지 크기 계산
         container_width = self.image_scroll_area.viewport().width()
         if container_width == 0:
             container_width = self.image_container.width()
         image_spacing = self.image_layout.spacing()
         images_per_row = 4
 
-        # 고정된 이미지 크기 설정
-        fixed_image_width = container_width // images_per_row - (image_spacing * (images_per_row - 1) // images_per_row)
+        # 이미지가 4개 이상일 때의 크기를 기준으로 고정
+        fixed_image_width = (container_width - (image_spacing * (images_per_row - 1))) // images_per_row
         fixed_image_height = int(fixed_image_width * 0.65)
-        timestamp_height = 15  # 타임스탬프 박스의 고정 높이
+        timestamp_height = 15
 
-        image_dir = os.path.join(os.path.dirname(self.db_path), "ImageStore")
+        # 중앙 정렬을 위한 컨테이너 생성
+        center_container = QWidget()
+        center_layout = QGridLayout(center_container)
+        center_layout.setSpacing(2)
+        center_layout.setContentsMargins(0, 0, 0, 0)
 
+        # 이미지 배치
         for index, (timestamp, image_token) in enumerate(results):
             set_box = QFrame()
             set_layout = QVBoxLayout(set_box)
@@ -255,7 +271,7 @@ class InternalAuditWidget(QWidget):
             formatted_time = dt.strftime("%Y-%m-%d %H:%M:%S")
             timestamp_box.setText(formatted_time)
 
-            base_image_path = os.path.join(image_dir, image_token)
+            base_image_path = os.path.join(os.path.dirname(self.db_path), "ImageStore", image_token)
             base_image_path = os.path.normpath(base_image_path)
             possible_extensions = ['', '.jpg', '.jpeg', '.png']
             image_path_with_ext = None
@@ -284,14 +300,20 @@ class InternalAuditWidget(QWidget):
                     set_layout.addWidget(image_box)
                     set_layout.addWidget(timestamp_container)  # timestamp_box 대신 container 추가
 
+                    # 그리드 레이아웃에 추가
                     row = index // images_per_row
                     col = index % images_per_row
-                    self.image_layout.addWidget(set_box, row, col)
+                    center_layout.addWidget(set_box, row, col, Qt.AlignLeft | Qt.AlignTop)  # 왼쪽 상단 정렬
                 else:
                     print("[Internal Audit] 이미지 로드 실패 (픽스맵이 NULL입니다):", image_path_with_ext)
             else:
                 print("[Internal Audit] 이미지 파일을 찾을 수 없음:", base_image_path)
 
+        # 빈 공간을 채우기 위한 스페이서 추가
+        center_layout.setColumnStretch(images_per_row, 1)
+        
+        # 중앙 컨테이너를 이미지 레이아웃에 추가
+        self.image_layout.addWidget(center_container, 0, 0, Qt.AlignLeft | Qt.AlignTop)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -464,23 +486,24 @@ class InternalAuditWidget(QWidget):
                 dt = datetime.fromtimestamp(timestamp / 1000)
                 formatted_time = dt.strftime("%Y-%m-%d %H:%M:%S")
                 
-                # 결과 텍스트 구성 (HTML 형식 사용)
-                output_text = f"<p>Time: {formatted_time}</p>"
-                
-                if app_names:
-                    output_text += f"<p>애플리케이션 명: {app_names}</p>"
-                
-                if web_uris:
-                    output_text += f"<p>Web Uri: {web_uris}</p>"
-                    
-                if file_paths:
-                    output_text += f"<p>File Path: {file_paths}</p>"
-                
-                if window_title:
-                    output_text += f"<p>Window Title: {window_title}</p>"
-                    
+                # 결과 텍스트 구성 (HTML 형식 사용, 스타일 개선)
+                output_text = f"""<div style='font-size: 12pt;'>
+                                <p><b style='font-size: 12pt;'>Time:</b> {formatted_time}</p>
+
+                                <p><b style='font-size: 12pt;'>Window Title:</b> {window_title if window_title else 'N/A'}</p>
+                                <hr style='border: 1px solid #e0e0e0; margin: 10px 0;'>
+
+                                <p><b style='font-size: 12pt;'>애플리케이션 명:</b> {app_names if app_names else 'N/A'}</p>
+                                <hr style='border: 1px solid #e0e0e0; margin: 10px 0;'>
+
+                                <p><b style='font-size: 12pt;'>Web Uri:</b> {web_uris if web_uris else 'N/A'}</p>
+                                <hr style='border: 1px solid #e0e0e0; margin: 10px 0;'>
+
+                                <p><b style='font-size: 12pt;'>File Path:</b> {file_paths if file_paths else 'N/A'}</p>
+                                """
+
                 if ocr_text:
-                    # 검색어 강조 처리
+                    # 검색어 강조 처리 (글자 크기 증가)
                     highlighted_text = ocr_text
                     if search_terms:
                         # 검색어 목록을 정규식 패턴으로 변환
@@ -488,7 +511,7 @@ class InternalAuditWidget(QWidget):
                         # 대소문자 구분 없이 검색어 찾기
                         highlighted_text = re.sub(
                             f'({pattern})', 
-                            r'<b>\1</b>', 
+                            r'<b style="font-size: 14pt; background-color: yellow;">\1</b>', 
                             highlighted_text, 
                             flags=re.IGNORECASE
                         )
@@ -498,27 +521,27 @@ class InternalAuditWidget(QWidget):
                     
                     # 검색어 정보 추가 - 연산자를 더 직관적으로 표시
                     if search_terms:
-                        # && -> AND, || -> OR로 변환
-                        if "&&" in current_search:
-                            operator = " AND "
-                        elif "||" in current_search:
-                            operator = " OR "
-                        else:
-                            operator = " "
-                            
-                        search_terms_str = operator.join(f"<b>{term}</b>" for term in search_terms)
-                        output_text += f"<p>검색어 ({search_terms_str})가 포함된 이미지입니다.</p>"
+                        operator = " AND " if "&&" in current_search else " OR " if "||" in current_search else " "
+                        search_terms_str = operator.join(f'<b style="font-size: 14pt; color: #0078D7;">{term}</b>' for term in search_terms)
+                        output_text += f"""
+                                        <hr style='border: 1px solid #e0e0e0; margin: 10px 0;'>
+                                        <p><b style='font-size: 12pt;'>검색어</b> ({search_terms_str})가 포함된 이미지입니다.</p>
+                                        """
                     
-                    output_text += f"<p><br>OCR 출력물:</p><p>{cleaned_text}</p>"
+                    output_text += f"""
+                                    <hr style='border: 1px solid #e0e0e0; margin: 10px 0;'>
+                                    <p><b style='font-size: 12pt;'>OCR 출력물:</b></p>
+                                    <p>{cleaned_text}</p>
+                                    """
                 
-                # HTML 형식으로 설정
+                output_text += "</div>"
                 self.lower_text_box.setHtml(output_text)
             else:
-                self.lower_text_box.setHtml("<p>내내용을 찾을 수 없습니다.</p>")
+                self.lower_text_box.setHtml("<p style='font-size: 10pt;'>내용을 찾을 수 없습니다.</p>")
                 
         except sqlite3.Error as e:
             print(f"[Internal Audit] 데이터베이스 오류: {e}")
-            self.lower_text_box.setHtml(f"<p>데이터베이스 오류: {e}</p>")
+            self.lower_text_box.setHtml(f"<p style='font-size: 10pt;'>데이터베이스 오류: {e}</p>")
 
     def load_all_images(self):
         """모든 이미미지를 로드"""

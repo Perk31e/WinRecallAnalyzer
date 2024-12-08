@@ -61,6 +61,10 @@ class ImageTableWidget(QWidget):
         self.keyword_search = QLineEdit()
         self.keyword_search.setPlaceholderText("OCR 검색")
         self.keyword_search.setFixedWidth(150)
+        self.keyword_search.setToolTip("search example:\n"
+                                      "Single Search: 검색어\n"
+                                      "AND Search: 검색어1 && 검색어2\n"
+                                      "OR Search: 검색어1 || 검색어2")
         search_group.addWidget(self.keyword_search)
 
         # Enter 키 시 search_images 호출
@@ -256,19 +260,59 @@ class ImageTableWidget(QWidget):
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
+            
             if keyword:
-                # 키워드가 있는 경우
-                query = """
-                SELECT wc.TimeStamp, wc.ImageToken
-                FROM WindowCapture wc
-                JOIN WindowCaptureTextIndex_content wctc ON wc.Id = wctc.c0
-                WHERE wc.TimeStamp BETWEEN ? AND ?
-                    AND wc.ImageToken IS NOT NULL
-                    AND (wctc.c1 LIKE ? OR wctc.c2 LIKE ?)
-                ORDER BY wc.TimeStamp ASC;
-                """
-                wildcard_keyword = f"%{keyword}%"
-                cursor.execute(query, (start_timestamp, end_timestamp, wildcard_keyword, wildcard_keyword))
+                # AND 연산 (&&)
+                if "&&" in keyword:
+                    terms = [term.strip() for term in keyword.split("&&")]
+                    params = [start_timestamp, end_timestamp]
+                    conditions = []
+                    for term in terms:
+                        params.append(f"%{term}%")
+                        conditions.append(f"EXISTS (SELECT 1 FROM WindowCaptureTextIndex_content wctc2 WHERE wctc2.c0 = wc.Id AND wctc2.c2 LIKE ?)")
+                    
+                    query = f"""
+                    SELECT DISTINCT wc.TimeStamp, wc.ImageToken
+                    FROM WindowCapture wc
+                    WHERE wc.TimeStamp BETWEEN ? AND ?
+                        AND wc.ImageToken IS NOT NULL
+                        AND {" AND ".join(conditions)}
+                    ORDER BY wc.TimeStamp ASC;
+                    """
+                    cursor.execute(query, params)
+                    
+                # OR 연산 (||)
+                elif "||" in keyword:
+                    terms = [term.strip() for term in keyword.split("||")]
+                    conditions = []
+                    params = [start_timestamp, end_timestamp]
+                    for term in terms:
+                        conditions.append("wctc.c2 LIKE ?")
+                        params.append(f"%{term}%")
+                    
+                    query = f"""
+                    SELECT DISTINCT wc.TimeStamp, wc.ImageToken
+                    FROM WindowCapture wc
+                    JOIN WindowCaptureTextIndex_content wctc ON wc.Id = wctc.c0
+                    WHERE wc.TimeStamp BETWEEN ? AND ?
+                        AND wc.ImageToken IS NOT NULL
+                        AND ({" OR ".join(conditions)})
+                    ORDER BY wc.TimeStamp ASC;
+                    """
+                    cursor.execute(query, params)
+                    
+                # 일반 검색
+                else:
+                    query = """
+                    SELECT DISTINCT wc.TimeStamp, wc.ImageToken
+                    FROM WindowCapture wc
+                    JOIN WindowCaptureTextIndex_content wctc ON wc.Id = wctc.c0
+                    WHERE wc.TimeStamp BETWEEN ? AND ?
+                        AND wc.ImageToken IS NOT NULL
+                        AND wctc.c2 LIKE ?
+                    ORDER BY wc.TimeStamp ASC;
+                    """
+                    cursor.execute(query, (start_timestamp, end_timestamp, f"%{keyword}%"))
             else:
                 # 키워드가 없는 경우
                 query = """
