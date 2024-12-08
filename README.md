@@ -6,9 +6,9 @@ This tool integrates Windows Recall artifacts with existing digital forensic dat
 
 - Python 3.12.7 64-bit
 - Required libraries:
-  - PySide6: Qt-based GUI framework (v6.6.1)
-  - pandas: Data manipulation and analysis (v2.2.0)
-  - sqlparse: SQL parsing and formatting (v0.4.4)
+  - PySide6: Qt-based GUI framework (v6.8.0.2)
+  - pandas: Data manipulation and analysis (v2.2.3)
+  - sqlparse: SQL parsing and formatting (v0.5.2)
 
 You can install all required packages using:
 
@@ -36,7 +36,7 @@ pip install -r requirements.txt
 - [ ] Add SRUM Analysis
 - [ ] Add Prefetch Analysis
 - [ ] Modify Qss Design
-- [X] Add Initial Recovery Results
+- [x] Add Initial Recovery Results
 - [ ] Convert .py to .exe binary file
 
 ## License
