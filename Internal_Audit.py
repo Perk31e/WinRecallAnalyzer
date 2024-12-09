@@ -112,7 +112,7 @@ class InternalAuditWidget(QWidget):
         self.db_path = db_path
 
     def search_images(self):
-        """OCR 검색 수행"""
+        """OCR, App, Web, File 검색 수행"""
         keyword = self.keyword_search.text().strip()
         if not keyword:
             self.load_all_images()
@@ -133,8 +133,13 @@ class InternalAuditWidget(QWidget):
                 params = []
                 conditions = []
                 for term in terms:
-                    params.append(f"%{term}%")
-                    conditions.append(f"EXISTS (SELECT 1 FROM WindowCaptureTextIndex_content wctc2 WHERE wctc2.c0 = wc.Id AND wctc2.c2 LIKE ?)")
+                    params.extend([f"%{term}%" for _ in range(4)])  # 4개의 테이블에서 검색
+                    conditions.append("""
+                        (EXISTS (SELECT 1 FROM WindowCaptureTextIndex_content wctc2 WHERE wctc2.c0 = wc.Id AND wctc2.c2 LIKE ?) OR
+                         EXISTS (SELECT 1 FROM WindowCaptureAppRelation wcar2 JOIN App a2 ON wcar2.AppId = a2.Id WHERE wcar2.WindowCaptureId = wc.Id AND a2.Name LIKE ?) OR
+                         EXISTS (SELECT 1 FROM WindowCaptureWebRelation wcwr2 JOIN Web w2 ON wcwr2.WebId = w2.Id WHERE wcwr2.WindowCaptureId = wc.Id AND w2.Uri LIKE ?) OR
+                         EXISTS (SELECT 1 FROM WindowCaptureFileRelation wcfr2 JOIN File f2 ON wcfr2.FileId = f2.Id WHERE wcfr2.WindowCaptureId = wc.Id AND f2.Path LIKE ?))
+                    """)
                 
                 query = f"""
                 SELECT DISTINCT wc.TimeStamp, wc.ImageToken
@@ -142,7 +147,6 @@ class InternalAuditWidget(QWidget):
                 WHERE {" AND ".join(conditions)}
                 ORDER BY wc.TimeStamp ASC;
                 """
-                cursor.execute(query, params)
                 
             # OR 연산 (||)
             elif "||" in keyword:
@@ -150,29 +154,46 @@ class InternalAuditWidget(QWidget):
                 conditions = []
                 params = []
                 for term in terms:
-                    conditions.append("wctc.c2 LIKE ?")
-                    params.append(f"%{term}%")
+                    conditions.append("""
+                        wctc.c2 LIKE ? OR
+                        a.Name LIKE ? OR
+                        w.Uri LIKE ? OR
+                        f.Path LIKE ?
+                    """)
+                    params.extend([f"%{term}%" for _ in range(4)])  # 4개의 테이블에서 검색
                 
                 query = f"""
                 SELECT DISTINCT wc.TimeStamp, wc.ImageToken
                 FROM WindowCapture wc
-                JOIN WindowCaptureTextIndex_content wctc ON wc.Id = wctc.c0
+                LEFT JOIN WindowCaptureTextIndex_content wctc ON wc.Id = wctc.c0
+                LEFT JOIN WindowCaptureAppRelation wcar ON wc.Id = wcar.WindowCaptureId
+                LEFT JOIN App a ON wcar.AppId = a.Id
+                LEFT JOIN WindowCaptureWebRelation wcwr ON wc.Id = wcwr.WindowCaptureId
+                LEFT JOIN Web w ON wcwr.WebId = w.Id
+                LEFT JOIN WindowCaptureFileRelation wcfr ON wc.Id = wcfr.WindowCaptureId
+                LEFT JOIN File f ON wcfr.FileId = f.Id
                 WHERE {" OR ".join(conditions)}
                 ORDER BY wc.TimeStamp ASC;
                 """
-                cursor.execute(query, params)
                 
             # 일반 검색
             else:
                 query = """
                 SELECT DISTINCT wc.TimeStamp, wc.ImageToken
                 FROM WindowCapture wc
-                JOIN WindowCaptureTextIndex_content wctc ON wc.Id = wctc.c0
-                WHERE wctc.c2 LIKE ?
+                LEFT JOIN WindowCaptureTextIndex_content wctc ON wc.Id = wctc.c0
+                LEFT JOIN WindowCaptureAppRelation wcar ON wc.Id = wcar.WindowCaptureId
+                LEFT JOIN App a ON wcar.AppId = a.Id
+                LEFT JOIN WindowCaptureWebRelation wcwr ON wc.Id = wcwr.WindowCaptureId
+                LEFT JOIN Web w ON wcwr.WebId = w.Id
+                LEFT JOIN WindowCaptureFileRelation wcfr ON wc.Id = wcfr.WindowCaptureId
+                LEFT JOIN File f ON wcfr.FileId = f.Id
+                WHERE wctc.c2 LIKE ? OR a.Name LIKE ? OR w.Uri LIKE ? OR f.Path LIKE ?
                 ORDER BY wc.TimeStamp ASC;
                 """
-                cursor.execute(query, (f"%{keyword}%",))
+                params = [f"%{keyword}%" for _ in range(4)]  # 4개의 테이블에서 검색
 
+            cursor.execute(query, params)
             results = cursor.fetchall()
             conn.close()
 
@@ -467,52 +488,53 @@ class InternalAuditWidget(QWidget):
                 dt = datetime.fromtimestamp(timestamp / 1000)
                 formatted_time = dt.strftime("%Y-%m-%d %H:%M:%S")
                 
+                # 검색어 강조 함수
+                def highlight_text(text, terms):
+                    if not text or not terms:
+                        return text if text else 'N/A'
+                    pattern = '|'.join(map(re.escape, terms))
+                    return re.sub(
+                        f'({pattern})', 
+                        r'<b style="font-size: 14pt; background-color: yellow;">\1</b>', 
+                        text, 
+                        flags=re.IGNORECASE
+                    )
+
+                # 검색어 정보 문자열 생성
+                search_info = ""
+                if search_terms:
+                    operator = " AND " if "&&" in current_search else " OR " if "||" in current_search else " "
+                    search_terms_str = operator.join(f'<b style="font-size: 14pt; color: #0078D7;">{term}</b>' for term in search_terms)
+                    search_info = f"""
+                                <p><b style='font-size: 12pt;'>검색어</b> ({search_terms_str})가 포함된 이미지입니다.</p>
+                                <hr style='border: 1px solid #e0e0e0; margin: 10px 0;'>
+                                """
+
                 # 결과 텍스트 구성 (HTML 형식 사용, 스타일 개선)
                 output_text = f"""<div style='font-size: 12pt;'>
                                 <p><b style='font-size: 12pt;'>Time:</b> {formatted_time}</p>
-
                                 <p><b style='font-size: 12pt;'>Window Title:</b> {window_title if window_title else 'N/A'}</p>
+                                
+                                {search_info}
+
+                                <p><b style='font-size: 12pt;'>애플리케이션 명:</b> {highlight_text(app_names, search_terms)}</p>
                                 <hr style='border: 1px solid #e0e0e0; margin: 10px 0;'>
 
-                                <p><b style='font-size: 12pt;'>애플리케이션 명:</b> {app_names if app_names else 'N/A'}</p>
+                                <p><b style='font-size: 12pt;'>Web Uri:</b> {highlight_text(web_uris, search_terms)}</p>
                                 <hr style='border: 1px solid #e0e0e0; margin: 10px 0;'>
 
-                                <p><b style='font-size: 12pt;'>Web Uri:</b> {web_uris if web_uris else 'N/A'}</p>
-                                <hr style='border: 1px solid #e0e0e0; margin: 10px 0;'>
-
-                                <p><b style='font-size: 12pt;'>File Path:</b> {file_paths if file_paths else 'N/A'}</p>
+                                <p><b style='font-size: 12pt;'>File Path:</b> {highlight_text(file_paths, search_terms)}</p>
                                 """
 
                 if ocr_text:
-                    # 검색어 강조 처리 (글자 크기 증가)
-                    highlighted_text = ocr_text
-                    if search_terms:
-                        # 검색어 목록을 정규식 패턴으로 변환
-                        pattern = '|'.join(map(re.escape, search_terms))
-                        # 대소문자 구분 없이 검색어 찾기
-                        highlighted_text = re.sub(
-                            f'({pattern})', 
-                            r'<b style="font-size: 14pt; background-color: yellow;">\1</b>', 
-                            highlighted_text, 
-                            flags=re.IGNORECASE
-                        )
-                    
-                    # OCR 텍스트 정제 (검색어 강조 이후)
-                    cleaned_text = self.clean_ocr_text(highlighted_text)
-                    
-                    # 검색어 정보 추가 - 연산자를 더 직관적으로 표시
-                    if search_terms:
-                        operator = " AND " if "&&" in current_search else " OR " if "||" in current_search else " "
-                        search_terms_str = operator.join(f'<b style="font-size: 14pt; color: #0078D7;">{term}</b>' for term in search_terms)
-                        output_text += f"""
-                                        <hr style='border: 1px solid #e0e0e0; margin: 10px 0;'>
-                                        <p><b style='font-size: 12pt;'>검색어</b> ({search_terms_str})가 포함된 이미지입니다.</p>
-                                        """
+                    # OCR 텍스트 정제 및 강조
+                    cleaned_text = self.clean_ocr_text(ocr_text)
+                    highlighted_text = highlight_text(cleaned_text, search_terms)
                     
                     output_text += f"""
                                     <hr style='border: 1px solid #e0e0e0; margin: 10px 0;'>
                                     <p><b style='font-size: 12pt;'>OCR 출력물:</b></p>
-                                    <p>{cleaned_text}</p>
+                                    <p>{highlighted_text}</p>
                                     """
                 
                 output_text += "</div>"
