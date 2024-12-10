@@ -16,9 +16,12 @@ class AppTableWidget(QWidget):
     def __init__(self, mode='analysis'):
         super().__init__()
         self.db_path = ""
-        self.current_mode = mode  # 모드 설정
+        self.current_mode = mode
+        self.srudb_path = None  # 초기화 추가
+        self.software_path = None  # 초기화 추가
         self.foreground_cycle_time_data = None
         self.setup_ui()
+
 
 
     def setup_ui(self):

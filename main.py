@@ -631,18 +631,19 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "파일 선택 취소", "ukg.db 파일이 선택되지 않았습니다.")
 
     def open_additional_files_dialog(self):
-        """ukg.db 이후 여러 히스토리 파일, SRUDB.dat, SOFTWARE 파일 선택"""
+        """히스토리 파일 및 추가 파일 선택 후 데이터 병합"""
         try:
-            desktop_path = os.path.expanduser("~/Desktop")  # 바탕화면 경로로 설정
+            desktop_path = os.path.expanduser("~/Desktop")  # 기본 경로
 
-            # History 파일 다중 선택
+            # History 파일 선택
             history_files, _ = QFileDialog.getOpenFileNames(
                 self, "히스토리 파일 선택", desktop_path, "All Files (*)"
             )
 
             if history_files:
                 print(f"[DEBUG] 히스토리 파일이 선택되었습니다: {history_files}")
-                # 기존 데이터 가져오기
+
+                # 기존 데이터를 저장
                 existing_data = []
                 existing_model = self.web_table_tab.table_view.model()
                 if existing_model:
@@ -653,13 +654,15 @@ class MainWindow(QMainWindow):
                         ]
                         existing_data.append(existing_row)
 
-                # 각 파일에 대해 처리
+                # 새 파일 데이터 병합
+                new_data = []
+                headers = []
                 for history_file in history_files:
-                    if hasattr(self.web_table_tab, 'set_history_db_path'):
+                    if hasattr(self.web_table_tab, "set_history_db_path"):
                         self.web_table_tab.set_history_db_path(history_file)
                         self.web_table_tab.update_related_data_status()
 
-                        # 새로운 데이터를 모델에서 가져오기
+                        # 모델에서 새 데이터 가져오기
                         new_model = self.web_table_tab.table_view.model()
                         if new_model:
                             for row in range(new_model.rowCount()):
@@ -667,23 +670,32 @@ class MainWindow(QMainWindow):
                                     new_model.index(row, col).data()
                                     for col in range(new_model.columnCount())
                                 ]
-                                # 중복 확인 후 추가
-                                if new_row not in existing_data:
-                                    existing_data.append(new_row)
+                                new_data.append(new_row)
+                            headers = [
+                                new_model.headerData(col, Qt.Horizontal)
+                                for col in range(new_model.columnCount())
+                            ]
 
-                # 병합된 데이터를 새로운 모델로 설정
-                headers = [
-                    existing_model.headerData(col, Qt.Horizontal)
-                    for col in range(existing_model.columnCount())
-                ]
-                merged_model = SQLiteTableModel(existing_data, headers)
-                self.web_table_tab.proxy_model.setSourceModel(merged_model)
-                self.web_table_tab.table_view.setModel(self.web_table_tab.proxy_model)
+                # 병합된 데이터로 새 모델 설정
+                merged_data = []
+                seen_rows = set()
+                for row in existing_data + new_data:
+                    row_tuple = tuple(row)  # 리스트를 튜플로 변환하여 중복 확인
+                    if row_tuple not in seen_rows:
+                        seen_rows.add(row_tuple)
+                        merged_data.append(row)
 
-                # 테이블 뷰 새로고침
-                self.web_table_tab.table_view.model().layoutChanged.emit()
-                self.web_table_tab.table_view.viewport().update()
-                print("[DEBUG] 히스토리 파일 데이터가 성공적으로 병합 및 업데이트되었습니다.")
+                # 새로운 모델 생성 및 설정
+                if headers:  # 헤더가 유효한지 확인
+                    merged_model = SQLiteTableModel(merged_data, headers)
+                    self.web_table_tab.table_view.setModel(self.web_table_tab.proxy_model)
+
+                    # UI 갱신
+                    self.web_table_tab.table_view.model().layoutChanged.emit()
+                    self.web_table_tab.table_view.viewport().update()
+                    print("[DEBUG] 히스토리 파일 데이터가 성공적으로 병합 및 업데이트되었습니다.")
+                else:
+                    print("[DEBUG] 병합된 데이터의 헤더가 유효하지 않습니다.")
 
             else:
                 print("히스토리 파일 선택이 건너뛰어졌습니다.")
@@ -693,6 +705,8 @@ class MainWindow(QMainWindow):
             if srudb_file:
                 self.srudb_path = srudb_file
                 print(f"SRUDB.dat 파일이 선택되었습니다: {self.srudb_path}")
+                if hasattr(self.app_table_tab, 'srudb_path'):
+                    self.app_table_tab.srudb_path = srudb_file  # AppTableWidget에 경로 전달
             else:
                 print("SRUDB.dat 파일 선택이 건너뛰어졌습니다.")
                 return  # SRUDB 파일 없으면 분석 중단
@@ -702,6 +716,8 @@ class MainWindow(QMainWindow):
             if software_file:
                 self.software_path = software_file
                 print(f"SOFTWARE 파일이 선택되었습니다: {self.software_path}")
+                if hasattr(self.app_table_tab, 'software_path'):
+                    self.app_table_tab.software_path = software_file  # AppTableWidget에 경로 전달
             else:
                 print("SOFTWARE 파일 선택이 건너뛰어졌습니다.")
                 return  # SOFTWARE 파일 없으면 분석 중단
@@ -709,7 +725,10 @@ class MainWindow(QMainWindow):
             # 파일이 모두 선택된 경우에만 SRUM 분석 호출
             if self.srudb_path and self.software_path:
                 print("SRUM 분석 함수 호출 시작")
-                self.analyze_srum_data_for_analysis_mode()
+                if hasattr(self.app_table_tab, 'analyze_srum_data_for_analysis_mode'):
+                    self.app_table_tab.analyze_srum_data_for_analysis_mode()
+                else:
+                    print("[DEBUG] app_table_tab에 analyze_srum_data_for_analysis_mode 메서드가 없습니다.")
             else:
                 print("SRUDB.dat 또는 SOFTWARE 파일이 누락되었습니다. 분석을 진행할 수 없습니다.")
 
@@ -802,7 +821,7 @@ class MainWindow(QMainWindow):
                 if not os.path.exists(image_path):
                     self.image_label.setText(f"이미지 파일을 찾을 수 없습니다: {image_token}")
                     return
-                
+
                 # 먼저 이미지를 image_label에 표시
                 self.load_image_in_thread(image_path)
                 # 이미지 클릭 이벤트 연결

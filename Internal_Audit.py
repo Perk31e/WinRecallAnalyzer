@@ -133,9 +133,10 @@ class InternalAuditWidget(QWidget):
                 params = []
                 conditions = []
                 for term in terms:
-                    params.extend([f"%{term}%" for _ in range(4)])  # 4개의 테이블에서 검색
+                    params.extend([f"%{term}%" for _ in range(5)])  # 5개의 테이블에서 검색
                     conditions.append("""
-                        (EXISTS (SELECT 1 FROM WindowCaptureTextIndex_content wctc2 WHERE wctc2.c0 = wc.Id AND wctc2.c2 LIKE ?) OR
+                        (wc.WindowTitle LIKE ? OR
+                         EXISTS (SELECT 1 FROM WindowCaptureTextIndex_content wctc2 WHERE wctc2.c0 = wc.Id AND wctc2.c2 LIKE ?) OR
                          EXISTS (SELECT 1 FROM WindowCaptureAppRelation wcar2 JOIN App a2 ON wcar2.AppId = a2.Id WHERE wcar2.WindowCaptureId = wc.Id AND a2.Name LIKE ?) OR
                          EXISTS (SELECT 1 FROM WindowCaptureWebRelation wcwr2 JOIN Web w2 ON wcwr2.WebId = w2.Id WHERE wcwr2.WindowCaptureId = wc.Id AND w2.Uri LIKE ?) OR
                          EXISTS (SELECT 1 FROM WindowCaptureFileRelation wcfr2 JOIN File f2 ON wcfr2.FileId = f2.Id WHERE wcfr2.WindowCaptureId = wc.Id AND f2.Path LIKE ?))
@@ -155,12 +156,13 @@ class InternalAuditWidget(QWidget):
                 params = []
                 for term in terms:
                     conditions.append("""
+                        wc.WindowTitle LIKE ? OR
                         wctc.c2 LIKE ? OR
                         a.Name LIKE ? OR
                         w.Uri LIKE ? OR
                         f.Path LIKE ?
                     """)
-                    params.extend([f"%{term}%" for _ in range(4)])  # 4개의 테이블에서 검색
+                    params.extend([f"%{term}%" for _ in range(5)])  # 5개의 테이블에서 검색
                 
                 query = f"""
                 SELECT DISTINCT wc.TimeStamp, wc.ImageToken
@@ -188,10 +190,10 @@ class InternalAuditWidget(QWidget):
                 LEFT JOIN Web w ON wcwr.WebId = w.Id
                 LEFT JOIN WindowCaptureFileRelation wcfr ON wc.Id = wcfr.WindowCaptureId
                 LEFT JOIN File f ON wcfr.FileId = f.Id
-                WHERE wctc.c2 LIKE ? OR a.Name LIKE ? OR w.Uri LIKE ? OR f.Path LIKE ?
+                WHERE wc.WindowTitle LIKE ? OR wctc.c2 LIKE ? OR a.Name LIKE ? OR w.Uri LIKE ? OR f.Path LIKE ?
                 ORDER BY wc.TimeStamp ASC;
                 """
-                params = [f"%{keyword}%" for _ in range(4)]  # 4개의 테이블에서 검색
+                params = [f"%{keyword}%" for _ in range(5)]  # 5개의 테이블에서 검색
 
             cursor.execute(query, params)
             results = cursor.fetchall()
@@ -204,12 +206,17 @@ class InternalAuditWidget(QWidget):
                 unique_results = []
                 seen_tokens = set()
                 for timestamp, token in results:
-                    if token not in seen_tokens:
+                    if token is not None and token not in seen_tokens:
                         unique_results.append((timestamp, token))
                         seen_tokens.add(token)
                 
-                self.display_images(unique_results)
-                self.lower_text_box.setText(f"총 {len(unique_results)}개의 결과가 검색되었습니다. (중복 제거됨)")
+                if unique_results:
+                    print(f"[Internal Audit] 중복 제거된 결과 수: {len(unique_results)}개")
+                    self.display_images(unique_results)
+                    self.lower_text_box.setText(f"총 {len(unique_results)}개의 결과가 검색되었습니다. (중복 제거됨)")
+                else:
+                    self.clear_images()
+                    self.lower_text_box.setText("검색 결과가 없습니다.")
             else:
                 self.clear_images()
                 self.lower_text_box.setText("검색 결과가 없습니다.")
@@ -265,6 +272,11 @@ class InternalAuditWidget(QWidget):
 
         # 이미지 배치
         for index, (timestamp, image_token) in enumerate(results):
+            # 이미지 토큰이 None인 경우 건너뛰기
+            if image_token is None:
+                print(f"[Internal Audit] 이미지 토큰이 None인 항목 건너뛰기 - TimeStamp: {timestamp}")
+                continue
+
             set_box = QFrame()
             set_layout = QVBoxLayout(set_box)
             set_layout.setSpacing(0)
@@ -510,20 +522,22 @@ class InternalAuditWidget(QWidget):
                                 <hr style='border: 1px solid #e0e0e0; margin: 10px 0;'>
                                 """
 
-                # 결과 텍스트 구성 (HTML 형식 사용, 스타일 개선)
+                # 결과 텍스트 구성 (순서 변경 및 WindowTitle 강조 추가)
                 output_text = f"""<div style='font-size: 12pt;'>
                                 <p><b style='font-size: 12pt;'>Time:</b> {formatted_time}</p>
-                                <p><b style='font-size: 12pt;'>Window Title:</b> {window_title if window_title else 'N/A'}</p>
                                 
                                 {search_info}
 
-                                <p><b style='font-size: 12pt;'>애플리케이션 명:</b> {highlight_text(app_names, search_terms)}</p>
+                                <p><b style='font-size: 12pt;'>Window Title:</b> {highlight_text(window_title, search_terms) if window_title else 'N/A'}</p>
                                 <hr style='border: 1px solid #e0e0e0; margin: 10px 0;'>
 
-                                <p><b style='font-size: 12pt;'>Web Uri:</b> {highlight_text(web_uris, search_terms)}</p>
+                                <p><b style='font-size: 12pt;'>애플리케이션 명:</b> {highlight_text(app_names, search_terms) if app_names else 'N/A'}</p>
                                 <hr style='border: 1px solid #e0e0e0; margin: 10px 0;'>
 
-                                <p><b style='font-size: 12pt;'>File Path:</b> {highlight_text(file_paths, search_terms)}</p>
+                                <p><b style='font-size: 12pt;'>Web Uri:</b> {highlight_text(web_uris, search_terms) if web_uris else 'N/A'}</p>
+                                <hr style='border: 1px solid #e0e0e0; margin: 10px 0;'>
+
+                                <p><b style='font-size: 12pt;'>File Path:</b> {highlight_text(file_paths, search_terms) if file_paths else 'N/A'}</p>
                                 """
 
                 if ocr_text:

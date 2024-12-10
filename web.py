@@ -126,17 +126,14 @@ class SQLiteTableModel(QAbstractTableModel):
 
     def setData(self, index, value, role=Qt.EditRole):
         if role == Qt.EditRole and index.isValid():
-            # proxy_model에서 source_model로 매핑
-            if hasattr(self, "proxy_model"):
-                source_index = self.proxy_model.mapToSource(index)
-                row, column = source_index.row(), source_index.column()
-            else:
-                row, column = index.row(), index.column()
+            # ProxyModel로부터 SourceModel로 변환
+            source_index = self.proxy_model.mapToSource(index) if hasattr(self, "proxy_model") else index
+            row, column = source_index.row(), source_index.column()
 
             print(f"[DEBUG] setData called for row: {row}, column: {column}")
             print(f"[DEBUG] Current data before modification: {self._data[row]}")
 
-            # 실제 데이터 업데이트
+            # 데이터 변경
             self._data[row][column] = value
             print(f"[DEBUG] Updated data: {self._data[row]}")
 
@@ -154,12 +151,20 @@ class SQLiteTableModel(QAbstractTableModel):
         )
         self.layoutChanged.emit()
 
-    def removeRow(self, row, parent=QModelIndex()):
-        if 0 <= row < len(self._data):
-            print(f"[DEBUG] Removing row {row}: {self._data[row]}")
-            self.beginRemoveRows(parent, row, row)
-            del self._data[row]
-            self.endRemoveRows()
+    def removeRow(self, proxy_row, parent=QModelIndex()):
+        # 프록시 인덱스를 소스 인덱스로 변환
+        if hasattr(self, "proxy_model"):
+            source_model = self.proxy_model.sourceModel()
+            source_row = self.proxy_model.mapToSource(self.proxy_model.index(proxy_row, 0)).row()
+        else:
+            source_model = self
+            source_row = proxy_row
+
+        if 0 <= source_row < len(source_model._data):  # 소스 데이터에서 삭제
+            print(f"[DEBUG] Removing row {source_row}: {source_model._data[source_row]}")
+            source_model.beginRemoveRows(parent, source_row, source_row)
+            del source_model._data[source_row]
+            source_model.endRemoveRows()
             return True
         return False
 
@@ -233,13 +238,11 @@ class WebTableWidget(QWidget):
         self.filter_browser_data()
 
     def load_data(self):
-        """테이블에 데이터를 로드하면서 연관 데이터를 바로 비교하여 설정합니다."""
         if self.db_path:
             new_data, headers = load_web_data(self.db_path)
-            print(f"[DEBUG] 로드된 데이터 개수: {len(new_data)}")  # 디버깅: 로드된 데이터 개수 확인
+            print(f"[DEBUG] 로드된 데이터 개수: {len(new_data)}")
 
             if new_data:
-                # Related Data 열 추가
                 if "Related Data" not in headers:
                     headers.append("Related Data")
 
@@ -248,18 +251,14 @@ class WebTableWidget(QWidget):
                 for row in new_data:
                     title = row[1]  # 타이틀
                     timestamp = row[2]  # 타임스탬프
-
-                    # Related Data 상태 확인
                     related_data_status = self.check_related_data(timestamp, title)
-
-                    # 기존 행에 상태 추가
                     extended_data.append(list(row) + [related_data_status])
 
                 # 데이터 모델 갱신
                 self._data = extended_data
-                print(f"[DEBUG] 갱신된 데이터 개수: {len(self._data)}")  # 디버깅
+                print(f"[DEBUG] 갱신된 데이터 개수: {len(self._data)}")
 
-                # 새로운 모델 생성 및 설정
+                # SourceModel과 ProxyModel 초기화
                 model = SQLiteTableModel(self._data, headers)
                 self.proxy_model.setSourceModel(model)
                 self.table_view.setModel(self.proxy_model)
@@ -268,7 +267,7 @@ class WebTableWidget(QWidget):
                 print("[DEBUG] 데이터가 성공적으로 로드되었습니다.")
             else:
                 print("[DEBUG] 로드된 데이터가 비어 있습니다.")
-                self._data = []  # 데이터를 초기화
+                self._data = []
                 self.table_view.setModel(None)
 
     def filter_browser_data(self):
@@ -356,6 +355,9 @@ class WebTableWidget(QWidget):
             print("[DEBUG] 히스토리 파일 경로가 설정되지 않았습니다.")
             return
 
+        proxy_model = self.proxy_model
+        source_model = proxy_model.sourceModel() if proxy_model else self
+
         model = self.table_view.model()
         if not model:
             print("[DEBUG] 모델이 초기화되지 않았습니다.")
@@ -394,28 +396,28 @@ class WebTableWidget(QWidget):
             # Update only if the status changes
             if current_status != related_data_status:
                 print(f"[DEBUG] 행 {row}의 Related Data 변경: {current_status} -> {related_data_status}")
-                model.setData(
-                    model.index(row, related_data_column_index), related_data_status
-                )
+                model.setData(model.index(row, related_data_column_index), related_data_status)
 
         # Remove rows with 'X' that should not exist
-        for row in reversed(rows_to_delete):  # Reverse to avoid index shifting
-            print(f"[DEBUG] Removing row {row}: {model._data[row]}")
-            model.removeRow(row)
+        for proxy_row in reversed(rows_to_delete):  # Reverse to avoid index shifting
+            print(f"[DEBUG] Removing row in proxy: {proxy_row}")
+            if hasattr(model, "removeRow"):
+                model.removeRow(proxy_row)
+            else:
+                print(f"[DEBUG] 'removeRow' 메서드가 모델에 정의되지 않았습니다.")
 
-        model.layoutChanged.emit()  # Refresh the view
         print("[DEBUG] update_related_data_status 완료.")
 
     def display_related_history_data(self, index=None):
         """
-        선택된 행의 관련 히스토리 데이터를 오른쪽 데이터 뷰어에 표시합니다.
+        선택된 행의 관련 히스토리 데이터를 HTML 표 형식으로 오른쪽 데이터 뷰어에 표시합니다.
         """
         if index is None:
-            self.data_viewer.setText("히스토리 데이터를 표시할 인덱스가 없습니다.")
+            self.data_viewer.setHtml("<p style='color: red;'>히스토리 데이터를 표시할 인덱스가 없습니다.</p>")
             return
 
         if not self.history_db_path:
-            self.data_viewer.setText("히스토리 파일 경로가 설정되지 않았습니다.")
+            self.data_viewer.setHtml("<p style='color: red;'>히스토리 파일 경로가 설정되지 않았습니다.</p>")
             return
 
         # 테이블에서 선택된 타이틀과 타임스탬프 가져오기
@@ -423,7 +425,7 @@ class WebTableWidget(QWidget):
         timestamp_ukg = self.table_view.model().index(index.row(), 2).data()
 
         if not selected_title or not timestamp_ukg:
-            self.data_viewer.setText("선택된 타이틀 또는 타임스탬프가 비어 있습니다.")
+            self.data_viewer.setHtml("<p style='color: red;'>선택된 타이틀 또는 타임스탬프가 비어 있습니다.</p>")
             return
 
         # 타이틀 간소화
@@ -442,7 +444,7 @@ class WebTableWidget(QWidget):
                 )
                 unix_timestamp = int(kst_time.timestamp())
             except ValueError as e:
-                self.data_viewer.setText(f"타임스탬프 변환 오류가 발생했습니다: {e}")
+                self.data_viewer.setHtml(f"<p style='color: red;'>타임스탬프 변환 오류가 발생했습니다: {e}</p>")
                 return
 
             # 히스토리 데이터 쿼리
@@ -450,41 +452,44 @@ class WebTableWidget(QWidget):
             cursor.execute(query, (simplified_title,))
             data = cursor.fetchall()
 
-            related_data = []
-            for row in data:
-                chrome_title = row[1]
-                chrome_time = row[3]
-
-                # Chrome 시간도 KST로 변환
-                kst_time_converted = convert_chrome_timestamp(chrome_time).astimezone(
-                    timezone(timedelta(hours=9))
-                )
-                browser_unix_timestamp = int(kst_time_converted.timestamp())
-
-                # ±1초 허용
-                if (
-                        simplified_title == chrome_title
-                        and abs(browser_unix_timestamp - unix_timestamp) <= 1
-                ):
-                    related_data.append(row)
-
-            # 데이터 뷰어에 결과 표시
-            if related_data:
-                formatted_data = []
-                for row in related_data:
-                    last_visit_time = row[3]
+            if data:
+                html_content = """
+                <table style="width: 100%; border-collapse: collapse; font-family: Arial, sans-serif; font-size: 14px;">
+                    <thead>
+                        <tr style="background-color: #f2f2f2; border: 1px solid #ddd;">
+                            <th style="padding: 8px; border: 1px solid #ddd;">URL</th>
+                            <th style="padding: 8px; border: 1px solid #ddd;">Title</th>
+                            <th style="padding: 8px; border: 1px solid #ddd;">Visit Count</th>
+                            <th style="padding: 8px; border: 1px solid #ddd;">Last Visit Time</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                """
+                for row in data:
+                    url, title, visit_count, last_visit_time = row
                     converted_time = convert_chrome_timestamp(last_visit_time).astimezone(
                         timezone(timedelta(hours=9))
                     )
-                    formatted_data.append(
-                        f"URL: {row[0]}\nTitle: {row[1]}\nVisit Count: {row[2]}\nLast Visit Time: {converted_time}\n---"
-                    )
-                self.data_viewer.setText("\n".join(formatted_data))
+                    html_content += f"""
+                        <tr>
+                            <td style="padding: 8px; border: 1px solid #ddd;">
+                                <a href="{url}" target="_blank" style="text-decoration: none; color: blue;">{url}</a>
+                            </td>
+                            <td style="padding: 8px; border: 1px solid #ddd;">{title}</td>
+                            <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">{visit_count}</td>
+                            <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">{converted_time}</td>
+                        </tr>
+                    """
+                html_content += """
+                    </tbody>
+                </table>
+                """
+                self.data_viewer.setHtml(html_content)
             else:
-                self.data_viewer.setText("연관된 히스토리 데이터를 찾을 수 없습니다.")
+                self.data_viewer.setHtml("<p>연관된 히스토리 데이터를 찾을 수 없습니다.</p>")
 
         except sqlite3.Error as e:
-            self.data_viewer.setText(f"히스토리 데이터를 로드하는 중 오류가 발생했습니다: {e}")
+            self.data_viewer.setHtml(f"<p style='color: red;'>히스토리 데이터를 로드하는 중 오류가 발생했습니다: {e}</p>")
 
         finally:
             if conn:
