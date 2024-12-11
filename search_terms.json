@@ -1,0 +1,30 @@
+[
+  {
+    "enabled": false,
+    "name": "채용 사이트",
+    "term": "사람인 || saramin",
+    "and_checked": false,
+    "or_checked": true
+  },
+  {
+    "enabled": true,
+    "name": "메신저",
+    "term": "discord || telegram || kakaotalk",
+    "and_checked": false,
+    "or_checked": true
+  },
+  {
+    "enabled": true,
+    "name": "채용",
+    "term": "채용 || 고용 || 이직",
+    "and_checked": true,
+    "or_checked": false
+  },
+  {
+    "enabled": true,
+    "name": "드라이브",
+    "term": "mybox || drive || 드라이브 || 클라우드",
+    "and_checked": false,
+    "or_checked": false
+  }
+]

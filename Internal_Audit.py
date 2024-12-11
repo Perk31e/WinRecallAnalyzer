@@ -1,13 +1,15 @@
 # Internal_Audit.py
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QTextEdit, QSplitter,
-                             QHBoxLayout, QLabel, QPushButton, QLineEdit, QScrollArea, QGridLayout, QFrame)
+                             QHBoxLayout, QLabel, QPushButton, QLineEdit, QScrollArea, QGridLayout, QFrame, QDialog, QVBoxLayout, QHBoxLayout, QCheckBox, 
+                              QDialogButtonBox, QMessageBox, QMenuBar)
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QPixmap
+from PySide6.QtGui import QPixmap, QAction
 import sqlite3
 import os
 from datetime import datetime
 from FlowLayout import FlowLayout  # FlowLayout 임포트
 import re
+import json
 
 class InternalAuditWidget(QWidget):
     def __init__(self):
@@ -37,7 +39,7 @@ class InternalAuditWidget(QWidget):
         
         self.keyword_search = QLineEdit()
         self.keyword_search.setPlaceholderText("검색어 입력")
-        self.keyword_search.setFixedWidth(150)
+        self.keyword_search.setFixedWidth(250)
         self.keyword_search.setToolTip("search example:\n"
                                      "Single Search: 검색어\n"
                                      "AND Search: 검색어1 && 검색어2\n"
@@ -51,6 +53,11 @@ class InternalAuditWidget(QWidget):
         search_button = QPushButton("검색")
         search_button.clicked.connect(self.search_images)
         search_layout.addWidget(search_button)
+
+        # 고급 버튼
+        advanced_search_button = QPushButton("고급")
+        advanced_search_button.clicked.connect(self.show_advanced_search_dialog)
+        search_layout.addWidget(advanced_search_button)
 
         # 초기화 버튼
         reset_button = QPushButton("초기화")
@@ -361,6 +368,15 @@ class InternalAuditWidget(QWidget):
         # 중앙 컨테이너를 이미지 레이아웃에 추가
         self.image_layout.addWidget(center_container, 0, 0, Qt.AlignLeft | Qt.AlignTop)
 
+    def show_advanced_search_dialog(self):
+        """고급 검색 대화상자 표시"""
+        dialog = AdvancedSearchDialog(self)
+        if dialog.exec() == QDialog.Accepted:
+            search_query = dialog.get_search_query()
+            if search_query:
+                self.keyword_search.setText(search_query)
+                self.search_images()
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         # 창 크기 변경 시 이미지를 다시 표시
@@ -458,7 +474,7 @@ class InternalAuditWidget(QWidget):
             # 현재 검색어 가져오기
             current_search = self.keyword_search.text().strip()
             
-            # 검색어 파싱��여 개별 키워드 추출
+            # 검색어 파싱하여 개별 키워드 추출
             search_terms = []
             if current_search:
                 # 괄호와 연산자를 기준으로 분리
@@ -654,3 +670,227 @@ class InternalAuditWidget(QWidget):
         # 현재 클릭한 이미지 정보 저장
         self.current_selected_box = clicked_box
         self.show_ocr_content(timestamp)
+
+class AdvancedSearchDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("고급 검색")
+        self.setMinimumWidth(600)  # 창의 최소 너비를 600으로 설정
+        self.setMinimumHeight(400)
+        self.search_terms = self.load_search_terms()
+        self.setup_ui()
+
+    def setup_ui(self):
+        main_layout = QVBoxLayout(self)
+
+        # 메뉴바 추가
+        menu_bar = QMenuBar(self)
+        file_menu = menu_bar.addMenu("Menu")
+        
+        save_action = QAction("검색어 저장", self)
+        save_action.triggered.connect(self.save_search_terms)
+        file_menu.addAction(save_action)
+        
+        main_layout.setMenuBar(menu_bar)
+        
+        # 스크롤 영역 생성
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)  # 가로 스크롤바 비활성화
+        
+        # 스크롤 영역에 들어갈 컨테이너 위젯
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setSpacing(10)  # 항목 간 간격 설정
+        
+        # 검색어 입력 영역
+        self.search_entries = []
+        for i in range(5):
+            entry_layout = QHBoxLayout()
+            
+            # enabled 체크박스
+            enabled_search = QCheckBox()
+            entry_layout.addWidget(enabled_search)
+            
+            # 검색어명 입력
+            name_edit = QLineEdit()
+            name_edit.setPlaceholderText(f"검색어명{i+1}")
+            name_edit.setFixedWidth(100)
+            entry_layout.addWidget(name_edit)
+            
+            # 검색어 입력
+            term_edit = QLineEdit()
+            term_edit.setPlaceholderText("검색어를 입력하세요")
+            term_edit.setFixedWidth(400)
+            entry_layout.addWidget(term_edit)
+            
+            # AND/OR 체크박스
+            and_checkbox = QCheckBox("AND")
+            or_checkbox = QCheckBox("OR")
+            entry_layout.addWidget(and_checkbox)
+            entry_layout.addWidget(or_checkbox)
+            
+            # 체크박스 상태 연동 (변수명 개선 및 로직 단순화)
+            def make_exclusive(current_checkbox, other_checkbox, checked):
+                """한 체크박스가 선택되면 다른 체크박스는 선택 해제"""
+                if checked:
+                    other_checkbox.setChecked(False)
+                
+            and_checkbox.stateChanged.connect(
+                lambda state, this_cb=and_checkbox, other_cb=or_checkbox: 
+                make_exclusive(this_cb, other_cb, state)
+            )
+            or_checkbox.stateChanged.connect(
+                lambda state, this_cb=or_checkbox, other_cb=and_checkbox: 
+                make_exclusive(this_cb, other_cb, state)
+            )
+            
+            layout.addLayout(entry_layout)
+            self.search_entries.append({
+                'enabled_search': enabled_search,
+                'name': name_edit,
+                'term': term_edit,
+                'and_cb': and_checkbox,
+                'or_cb': or_checkbox
+            })
+
+        # 추가 버튼
+        add_button = QPushButton("(+) 사용자 지정 검색어 추가")
+        add_button.clicked.connect(self.add_custom_search)
+        layout.addWidget(add_button)
+
+        # 스크롤 영역에 컨테이너 설정
+        scroll_area.setWidget(container)
+        
+        # 메인 레이아웃에 스크롤 영역 추가
+        main_layout.addWidget(scroll_area)
+
+        # 확인/취소 버튼
+        button_box = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        )
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        main_layout.addWidget(button_box)
+
+        # 저장된 검색어 불러오기
+        self.apply_saved_search_terms()
+
+    def add_custom_search(self):
+        """사용자 지정 검색어 입력란 추가"""
+        # 스크롤 영역의 컨테이너 위젯 가져오기
+        container = self.findChild(QScrollArea).widget()
+        layout = container.layout()
+        
+        # 새로운 검색어 입력란 생성
+        entry_layout = QHBoxLayout()
+        
+        # enabled 체크박스
+        enabled_search = QCheckBox()
+        entry_layout.addWidget(enabled_search)
+        
+        # 검색어명 입력
+        name_edit = QLineEdit()
+        name_edit.setPlaceholderText(f"검색어명{len(self.search_entries)+1}")
+        name_edit.setFixedWidth(100)
+        entry_layout.addWidget(name_edit)
+        
+        # 검색어 입력
+        term_edit = QLineEdit()
+        term_edit.setPlaceholderText("검색어를 입력하세요")
+        entry_layout.addWidget(term_edit)
+        
+        # AND/OR 체크박스
+        and_checkbox = QCheckBox("AND")
+        or_checkbox = QCheckBox("OR")
+        entry_layout.addWidget(and_checkbox)
+        entry_layout.addWidget(or_checkbox)
+        
+        # 체크박스 상태 연동
+        def make_exclusive(current_checkbox, other_checkbox, checked):
+            """한 체크박스가 선택되면 다른 체크박스는 선택 해제"""
+            if checked:
+                other_checkbox.setChecked(False)
+                
+        and_checkbox.stateChanged.connect(
+            lambda state, this_cb=and_checkbox, other_cb=or_checkbox: 
+            make_exclusive(this_cb, other_cb, state)
+        )
+        or_checkbox.stateChanged.connect(
+            lambda state, this_cb=or_checkbox, other_cb=and_checkbox: 
+            make_exclusive(this_cb, other_cb, state)
+        )
+        
+        # 새로운 입력란을 버튼 위에 추가
+        layout.insertLayout(layout.count() - 1, entry_layout)
+        
+        self.search_entries.append({
+            'enabled_search': enabled_search,
+            'name': name_edit,
+            'term': term_edit,
+            'and_cb': and_checkbox,
+            'or_cb': or_checkbox
+        })
+
+    def save_search_terms(self):
+        """검색어 설정을 파일로 저장"""
+        search_data = []
+        for entry in self.search_entries:
+            if entry['name'].text() and entry['term'].text():
+                search_data.append({
+                    'enabled': entry['enabled_search'].isChecked(),  # checkbox -> enabled_search
+                    'name': entry['name'].text(),
+                    'term': entry['term'].text(),
+                    'and_checked': entry['and_cb'].isChecked(),
+                    'or_checked': entry['or_cb'].isChecked()
+                })
+        
+        try:
+            with open('search_terms.json', 'w', encoding='utf-8') as f:
+                json.dump(search_data, f, ensure_ascii=False, indent=2)
+            QMessageBox.information(self, "저장 완료", "검색어 설정이 저장되었습니다.")
+        except Exception as e:
+            QMessageBox.warning(self, "저장 실패", f"검색어 설정 저장 중 오류가 발생했습니다.\n{str(e)}")
+
+    def load_search_terms(self):
+        """저장된 검색어 설정 불러오기"""
+        try:
+            with open('search_terms.json', 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            return []
+
+    def apply_saved_search_terms(self):
+        """저장된 검색어 설정을 UI에 적용"""
+        for i, term_data in enumerate(self.search_terms):
+            if i < len(self.search_entries):
+                entry = self.search_entries[i]
+                entry['enabled_search'].setChecked(term_data.get('enabled', False))  # checkbox -> enabled_search
+                entry['name'].setText(term_data.get('name', ''))
+                entry['term'].setText(term_data.get('term', ''))
+                entry['and_cb'].setChecked(term_data.get('and_checked', False))
+                entry['or_cb'].setChecked(term_data.get('or_checked', False))
+
+    def get_search_query(self):
+        """선택된 검색어들을 조합하여 검색 쿼리 생성"""
+        query_parts = []
+        enabled_entries = [
+            entry for entry in self.search_entries 
+            if entry['enabled_search'].isChecked() and entry['term'].text().strip()
+        ]
+        
+        for i, entry in enumerate(enabled_entries):
+            term = entry['term'].text().strip()
+            query_parts.append(f"({term})")
+            
+            # 마지막 엔트리가 아닐 경우에만 연산자 추가
+            if i < len(enabled_entries) - 1:
+                if entry['or_cb'].isChecked():
+                    query_parts.append("||")
+                elif entry['and_cb'].isChecked():
+                    query_parts.append("&&")
+                else:
+                    # 아무것도 선택되지 않은 경우 기본값으로 AND 사용
+                    query_parts.append("&&")
+        
+        return " ".join(query_parts)

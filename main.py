@@ -525,6 +525,7 @@ class MainWindow(QMainWindow):
 
     def open_file_dialog(self):
         """ukg.db 파일 선택 및 이후 관련 파일 선택"""
+        import sqlite3  # sqlite3 명시적 임포트
         desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")  # 바탕화면 경로로 설정
 
         # Recover_Output 디렉토리 생성 (파일을 복사할 디렉토리)
@@ -536,95 +537,83 @@ class MainWindow(QMainWindow):
         db_path = self.open_file("ukg.db 파일 선택", desktop_path, "All Files (*)")
 
         if db_path:
-            # 분석 PC 모드에서는 ukg.db와 ukg.db-wal 파일을 사용자에게 직접 선택하도록 요청
+            print(f"[DEBUG] ukg.db 파일 선택됨: {db_path}")
+            self.db_path = db_path  # 선택한 파일 경로 저장
+
+            # 분석 PC 모드 처리
             if self.current_mode == 'analysis':
-                # ukg.db-wal 파일 선택
                 wal_file = self.open_file("ukg.db-wal 파일 선택", desktop_path, "All Files (*)")
                 if wal_file:
-                    print(f"ukg.db-wal 파일 선택됨: {wal_file}")
-                    # `remained.db-wal` 파일 복사
                     remained_wal = os.path.join(output_dir, "remained.db-wal")
                     shutil.copyfile(wal_file, remained_wal)
-                    print(f"ukg.db-wal 파일을 {remained_wal}에 복사했습니다.")
+                    print(f"[DEBUG] wal 파일 복사됨: {remained_wal}")
                 else:
-                    print("ukg.db-wal 파일이 선택되지 않았습니다.")
-                    remained_wal = None  # wal_file이 선택되지 않으면 remained.db-wal 파일 복사하지 않음
+                    print("[DEBUG] wal 파일이 선택되지 않았습니다.")
 
             # 원본 디렉토리에서 ukg.db와 ukg.db-wal 파일 찾기
             original_dir = os.path.dirname(db_path)
             ukg_db_path = os.path.join(original_dir, "ukg.db")
-            ukg_wal_path = os.path.join(original_dir, "ukg.db-wal")
-
-            # Recover_Output에 복사할 파일 경로
             recovered_wal_db = os.path.join(output_dir, "recovered_with_wal.db")
 
-            # 기존 파일이 있다면 삭제
             if os.path.exists(recovered_wal_db):
                 os.remove(recovered_wal_db)
 
-            # ukg.db 파일 복사
             if os.path.exists(ukg_db_path):
                 shutil.copyfile(ukg_db_path, recovered_wal_db)
-                print(f"ukg.db 파일을 {recovered_wal_db}에 복사했습니다.")
+                print(f"[DEBUG] ukg.db 파일 복사됨: {recovered_wal_db}")
             else:
-                print("ukg.db 파일을 찾을 수 없습니다.")
+                print("[ERROR] ukg.db 파일을 찾을 수 없습니다.")
+                return
 
-            # 기존 코드 유지 - 선택한 DB 파일로 작업
-            self.db_path = db_path
-            self.load_data(self.db_path)  # self.db_path로 변경하여 호출
+            # DB 파일 로드 및 관련 데이터 설정
+            self.load_data(self.db_path)
 
             # 다른 탭에 db_path 전달
             if hasattr(self.app_table_tab, 'set_db_path'):
-                self.app_table_tab.set_db_path(self.db_path)  # self.db_path 사용
+                self.app_table_tab.set_db_path(self.db_path)
             if hasattr(self.image_table_tab, 'set_db_path'):
-                self.image_table_tab.set_db_path(self.db_path)  # self.db_path 사용
+                self.image_table_tab.set_db_path(self.db_path)
             if hasattr(self.web_table_tab, 'set_db_path'):
-                self.web_table_tab.set_db_path(self.db_path)  # self.db_path 사용
-            if hasattr(self.file_table_tab, 'set_db_path'):  # FileTableWidget에 db_path 설정 추가
+                self.web_table_tab.set_db_path(self.db_path)
+            if hasattr(self.file_table_tab, 'set_db_path'):
                 self.file_table_tab.set_db_path(self.db_path)
             if hasattr(self.recovery_table_tab, 'set_db_paths'):
                 self.recovery_table_tab.set_db_paths(db_path, recovered_wal_db)
             if hasattr(self.internal_audit_tab, 'set_db_path'):
                 self.internal_audit_tab.set_db_path(self.db_path)
 
-            # **히스토리 파일 경로 설정 및 관련 데이터 갱신**: ukg.db 파일 선택 후 실행
-            try:
-                if self.current_mode == 'target':  # 대상 PC 모드일 때만 히스토리 파일 설정
-                    if hasattr(self.web_table_tab, 'set_history_db_path') and hasattr(self.web_table_tab,
-                                                                                      'update_related_data_status'):
-                        # 히스토리 파일 경로 설정
-                        chrome_history_path = os.path.join(desktop_path, "Recall_load", "Browser_History",
-                                                           "Chrome_History")
-                        edge_history_path = os.path.join(desktop_path, "Recall_load", "Browser_History", "Edge_History")
+            # 대상 PC 모드에서 히스토리 파일 경로 설정
+            if self.current_mode == 'target':
+                chrome_history_path = os.path.join(desktop_path, "Recall_load", "Browser_History", "Chrome_History")
+                edge_history_path = os.path.join(desktop_path, "Recall_load", "Browser_History", "Edge_History")
 
-                        # Chrome 히스토리 처리
-                        if os.path.exists(chrome_history_path):
-                            print(f"[DEBUG] Chrome 히스토리 파일 경로 설정: {chrome_history_path}")
-                            self.web_table_tab.set_history_db_path(chrome_history_path)
+                for history_path, browser in [(chrome_history_path, "Chrome"), (edge_history_path, "Edge")]:
+                    if os.path.exists(history_path):
+                        print(f"[DEBUG] {browser} 히스토리 파일 경로 설정: {history_path}")
+                        try:
+                            self.web_table_tab.set_history_db_path(history_path)
 
-                            # 관련 데이터 상태 갱신 및 디버깅 로그
+                            # SQLite 파일 검증
+                            with sqlite3.connect(history_path) as conn:
+                                conn.execute("SELECT 1;")
+                                print(f"[DEBUG] {history_path}는 유효한 SQLite 파일입니다.")
+
+                            # 관련 데이터 갱신
                             self.web_table_tab.update_related_data_status()
-                            print("[DEBUG] Chrome 히스토리 update_related_data_status 호출 완료.")
-
-                        # Edge 히스토리 처리
-                        if os.path.exists(edge_history_path):
-                            print(f"[DEBUG] Edge 히스토리 파일 경로 설정: {edge_history_path}")
-                            self.web_table_tab.set_history_db_path(edge_history_path)
-
-                            # 관련 데이터 상태 갱신 및 디버깅 로그
-                            self.web_table_tab.update_related_data_status()
-                            print("[DEBUG] Edge 히스토리 update_related_data_status 호출 완료.")
-
-                        # 테이블 뷰 강제 새로고침
-                        self.web_table_tab.table_view.model().layoutChanged.emit()
-                        self.web_table_tab.table_view.viewport().update()
-                        print("[DEBUG] 테이블 뷰 강제 새로고침 완료.")
+                            print(f"[DEBUG] {browser} 히스토리 관련 데이터 갱신 완료.")
+                        except sqlite3.Error as e:
+                            print(f"[ERROR] {browser} 히스토리 파일 SQLite 오류: {e}")
+                        except Exception as e:
+                            print(f"[ERROR] {browser} 히스토리 데이터 처리 중 오류 발생: {e}")
                     else:
-                        print("[DEBUG] 분석 PC 모드에서는 히스토리 파일 설정이 생략됩니다.")
-            except Exception as e:
-                print(f"[DEBUG] 히스토리 파일 설정 및 데이터 갱신 중 오류 발생: {e}")
+                        print(f"[DEBUG] {browser} 히스토리 파일이 존재하지 않습니다: {history_path}")
 
-            # 분석 PC 모드일 경우 후속 파일 선택을 진행
+                # 테이블 뷰 새로고침
+                self.web_table_tab.table_view.model().layoutChanged.emit()
+                self.web_table_tab.table_view.viewport().update()
+                print("[DEBUG] 테이블 뷰 강제 새로고침 완료.")
+
+            # 분석 PC 모드에서 후속 파일 선택 실행
             if self.current_mode == 'analysis':
                 self.open_additional_files_dialog()
         else:
@@ -643,59 +632,78 @@ class MainWindow(QMainWindow):
             if history_files:
                 print(f"[DEBUG] 히스토리 파일이 선택되었습니다: {history_files}")
 
-                # 기존 데이터를 저장
-                existing_data = []
+                # 기존 데이터 가져오기
                 existing_model = self.web_table_tab.table_view.model()
-                if existing_model:
-                    for row in range(existing_model.rowCount()):
-                        existing_row = [
-                            existing_model.index(row, col).data()
-                            for col in range(existing_model.columnCount())
-                        ]
-                        existing_data.append(existing_row)
+                if isinstance(existing_model, QSortFilterProxyModel):
+                    source_model = existing_model.sourceModel()
+                else:
+                    source_model = existing_model
 
-                # 새 파일 데이터 병합
-                new_data = []
+                existing_data = []
                 headers = []
+                if source_model:
+                    for row_index in range(source_model.rowCount()):
+                        row = [
+                            source_model.index(row_index, col).data()
+                            for col in range(source_model.columnCount())
+                        ]
+                        existing_data.append(row)
+                    headers = [
+                        source_model.headerData(col, Qt.Horizontal)
+                        for col in range(source_model.columnCount())
+                    ]
+
+                # 새 데이터 처리
+                new_data = []
                 for history_file in history_files:
                     if hasattr(self.web_table_tab, "set_history_db_path"):
                         self.web_table_tab.set_history_db_path(history_file)
                         self.web_table_tab.update_related_data_status()
 
                         # 모델에서 새 데이터 가져오기
-                        new_model = self.web_table_tab.table_view.model()
-                        if new_model:
-                            for row in range(new_model.rowCount()):
-                                new_row = [
-                                    new_model.index(row, col).data()
-                                    for col in range(new_model.columnCount())
-                                ]
-                                new_data.append(new_row)
-                            headers = [
-                                new_model.headerData(col, Qt.Horizontal)
-                                for col in range(new_model.columnCount())
-                            ]
+                        current_model = self.web_table_tab.table_view.model()
+                        if isinstance(current_model, QSortFilterProxyModel):
+                            current_source_model = current_model.sourceModel()
+                        else:
+                            current_source_model = current_model
 
-                # 병합된 데이터로 새 모델 설정
-                merged_data = []
-                seen_rows = set()
-                for row in existing_data + new_data:
-                    row_tuple = tuple(row)  # 리스트를 튜플로 변환하여 중복 확인
-                    if row_tuple not in seen_rows:
-                        seen_rows.add(row_tuple)
-                        merged_data.append(row)
+                        if current_source_model:
+                            for row_index in range(current_source_model.rowCount()):
+                                row = [
+                                    current_source_model.index(row_index, col).data()
+                                    for col in range(current_source_model.columnCount())
+                                ]
+                                new_data.append(row)
+
+                # 병합 및 중복 제거
+                merged_data_dict = {}
+
+                # 기존 데이터 추가
+                for row in existing_data:
+                    key = (row[1], row[2], row[0])  # title, timestamp, uri를 키로 사용
+                    if key not in merged_data_dict or merged_data_dict[key][3] == "X":
+                        merged_data_dict[key] = row
+
+                # 새로운 데이터 병합
+                for row in new_data:
+                    key = (row[1], row[2], row[0])  # title, timestamp, uri를 키로 사용
+                    if key not in merged_data_dict or merged_data_dict[key][3] == "X":
+                        merged_data_dict[key] = row
+
+                # 최종 데이터 생성
+                unique_rows = list(merged_data_dict.values())
 
                 # 새로운 모델 생성 및 설정
-                if headers:  # 헤더가 유효한지 확인
-                    merged_model = SQLiteTableModel(merged_data, headers)
-                    self.web_table_tab.table_view.setModel(self.web_table_tab.proxy_model)
-
-                    # UI 갱신
-                    self.web_table_tab.table_view.model().layoutChanged.emit()
-                    self.web_table_tab.table_view.viewport().update()
-                    print("[DEBUG] 히스토리 파일 데이터가 성공적으로 병합 및 업데이트되었습니다.")
+                updated_model = SQLiteTableModel(unique_rows, headers)
+                if isinstance(existing_model, QSortFilterProxyModel):
+                    existing_model.setSourceModel(updated_model)
+                    self.web_table_tab.table_view.setModel(existing_model)
                 else:
-                    print("[DEBUG] 병합된 데이터의 헤더가 유효하지 않습니다.")
+                    self.web_table_tab.table_view.setModel(updated_model)
+
+                # UI 갱신
+                self.web_table_tab.table_view.viewport().update()
+                print("[DEBUG] 히스토리 파일 데이터가 성공적으로 병합되었습니다.")
 
             else:
                 print("히스토리 파일 선택이 건너뛰어졌습니다.")

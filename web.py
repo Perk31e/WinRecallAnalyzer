@@ -8,7 +8,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, QSortFilterProxyModel, Qt
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QTableView, QTextEdit, QSplitter, QDialog, QMessageBox, QFrame, \
-    QSpacerItem, QSizePolicy, QHBoxLayout, QLabel
+    QSpacerItem, QSizePolicy, QHBoxLayout, QLabel, QStyledItemDelegate
 from database import SQLiteTableModel, load_web_data, load_data_from_db
 from no_focus_frame_style import NoFocusFrameStyle
 
@@ -57,6 +57,13 @@ def simplify_title(title):
     title = title.strip("- ")  # 양쪽 불필요한 '-'와 공백 제거
 
     return title.strip() if title.strip() else None
+
+class CenterAlignedDelegate(QStyledItemDelegate):
+    def initStyleOption(self, option, index):
+        super().initStyleOption(option, index)
+        if index.column() == related_data_column_index:  # Related Data 열의 인덱스
+            option.displayAlignment = Qt.AlignCenter
+
 
 class DetailDialog(QDialog):
     def __init__(self, data, headers):
@@ -227,17 +234,38 @@ class WebTableWidget(QWidget):
         self.table_view.clicked.connect(self.display_related_history_data)
 
     def setup_model(self):
-        """필터 및 ��렬 모델 설정"""
+        """모델 초기화 및 열 크기 고정."""
         self.proxy_model = QSortFilterProxyModel(self)
-        self.proxy_model.setFilterKeyColumn(1)  # Window Title 열 필터링
+        self.proxy_model.setFilterKeyColumn(1)  # 필터링 기준 열 설정
         self.proxy_model.setFilterCaseSensitivity(Qt.CaseInsensitive)
+
         self.table_view.setModel(self.proxy_model)
+
+        # 열 크기를 바로 설정
+        self.adjust_column_widths()
 
         # 브라우저 키워드 설정
         self.browser_keywords = ["Chrome", "Firefox", "Edge", "Whale"]
         self.filter_browser_data()
 
+    def adjust_column_widths(self):
+        """열 크기를 고정."""
+        view = self.table_view
+        model = view.model()
+
+        if not model:
+            return
+
+        # 고정 열 크기 설정
+        fixed_widths = {0: 150, 1: 300, 2: 200, 3: 100}  # 열 인덱스: 고정 너비
+        for column in range(model.columnCount()):
+            if column in fixed_widths:
+                view.setColumnWidth(column, fixed_widths[column])
+            else:
+                view.resizeColumnToContents(column)
+
     def load_data(self):
+        """데이터 로드 및 열 크기 고정."""
         if self.db_path:
             new_data, headers = load_web_data(self.db_path)
             print(f"[DEBUG] 로드된 데이터 개수: {len(new_data)}")
@@ -262,8 +290,9 @@ class WebTableWidget(QWidget):
                 model = SQLiteTableModel(self._data, headers)
                 self.proxy_model.setSourceModel(model)
                 self.table_view.setModel(self.proxy_model)
-                self.table_view.resizeColumnToContents(len(headers) - 1)
 
+                # 데이터 로드 후 열 크기 고정
+                self.adjust_column_widths()
                 print("[DEBUG] 데이터가 성공적으로 로드되었습니다.")
             else:
                 print("[DEBUG] 로드된 데이터가 비어 있습니다.")
@@ -276,78 +305,89 @@ class WebTableWidget(QWidget):
         self.proxy_model.setFilterRegularExpression(pattern)
 
     def set_history_db_path(self, history_file_path):
-        """히스토리 DB 파일 경로 설정"""
-        self.history_db_path = history_file_path
-        print(f"히스토리 파일 경로 설정됨: {self.history_db_path}")
+        """
+        히스토리 DB 파일 경로 설정. 여러 경로를 관리할 수 있도록 확장.
+        """
+        # 기존 경로가 리스트가 아닌 경우 초기화
+        if not hasattr(self, "history_db_paths") or not isinstance(self.history_db_paths, list):
+            self.history_db_paths = []
 
-        # 그 외 필요한 후속 작업
-        self.display_related_history_data()  # 필요에 따라 추가
+        # 경로가 이미 리스트에 포함되어 있지 않으면 추가
+        if history_file_path not in self.history_db_paths:
+            self.history_db_paths.append(history_file_path)
+            print(f"히스토리 파일 경로 추가됨: {history_file_path}")
+        else:
+            print(f"히스토리 파일 경로가 이미 추가되어 있습니다: {history_file_path}")
+
+        # 기존 동작과 호환성을 위해 첫 번째 파일을 self.history_db_path로 설정
+        self.history_db_path = self.history_db_paths[0] if self.history_db_paths else None
+
+        # 기존 호출 유지
+        self.display_related_history_data()
 
     def check_related_data(self, timestamp_ukg, title_ukg):
-        """연관 데이터 확인 (히스토리 파일 기반)"""
-        if not self.history_db_path or title_ukg is None or timestamp_ukg is None:
-            return "X"  # 연관 데이터 없음 (X)
+        """연관 데이터 확인 (여러 히스토리 파일 기반)"""
+        # 히스토리 파일 리스트가 없거나 제목/타임스탬프가 None이면 X 반환
+        if not hasattr(self,
+                       "history_db_paths") or not self.history_db_paths or title_ukg is None or timestamp_ukg is None:
+            return "X"
 
-        conn = None
-        try:
-            # timestamp_ukg가 문자열일 경우 변환
-            if isinstance(timestamp_ukg, str):
-                try:
-                    timestamp_ukg = float(datetime.strptime(timestamp_ukg, "%Y-%m-%d %H:%M:%S").timestamp()) * 1000
-                except ValueError:
-                    return "X"  # 변환 실패 시 연관 데이터 없음 (X)
-
-            # SQLite 연결 및 사용자 정의 REGEXP 함수 생성
-            conn = sqlite3.connect(self.history_db_path)
-            conn.create_function("REGEXP", 2, regexp)
-            cursor = conn.cursor()
-
-            # ukg.db 타임스탬프를 KST로 변환
+        # timestamp_ukg가 문자열일 경우 변환
+        if isinstance(timestamp_ukg, str):
             try:
-                kst_time_ukg = datetime.fromtimestamp(timestamp_ukg / 1000, tz=timezone.utc).astimezone(
-                    timezone(timedelta(hours=9))
-                )
-                ukg_unix_timestamp = int(kst_time_ukg.timestamp())
+                timestamp_ukg = float(datetime.strptime(timestamp_ukg, "%Y-%m-%d %H:%M:%S").timestamp()) * 1000
             except ValueError:
-                return "X"  # 변환 실패 시 연관 데이터 없음 (X)
+                return "X"
 
-            # 타이틀 간소화
-            simplified_title = simplify_title(title_ukg)
+        simplified_title = simplify_title(title_ukg)
 
-            # 히스토리 데이터와 연관성 확인
-            query = "SELECT title, last_visit_time FROM urls WHERE title REGEXP ?"
-            cursor.execute(query, (simplified_title,))
-            data = cursor.fetchall()
+        # 모든 히스토리 파일을 순회하며 연관 데이터 확인
+        for history_db_path in self.history_db_paths:
+            conn = None
+            try:
+                # SQLite 연결 및 사용자 정의 REGEXP 함수 생성
+                conn = sqlite3.connect(history_db_path)
+                conn.create_function("REGEXP", 2, regexp)
+                cursor = conn.cursor()
 
-            if not data:
-                return "X"  # 연관 데이터 없음 (X)
-
-            # 연관 데이터 검증
-            for row in data:
-                chrome_title = row[0]
-                chrome_time = row[1]
-
+                # ukg.db 타임스탬프를 KST로 변환
                 try:
-                    # Chrome 타임스탬프 변환
-                    kst_time_converted = convert_chrome_timestamp(chrome_time).astimezone(
+                    kst_time_ukg = datetime.fromtimestamp(timestamp_ukg / 1000, tz=timezone.utc).astimezone(
                         timezone(timedelta(hours=9))
                     )
-                    browser_unix_timestamp = int(kst_time_converted.timestamp())
-                except Exception:
+                    ukg_unix_timestamp = int(kst_time_ukg.timestamp())
+                except ValueError:
                     continue
 
-                # ±1초의 매칭 허용
-                if chrome_title == simplified_title and abs(browser_unix_timestamp - ukg_unix_timestamp) <= 1:
-                    return "O"  # 연관 데이터 있음 (O)
+                # 히스토리 데이터와 연관성 확인
+                query = "SELECT title, last_visit_time FROM urls WHERE title REGEXP ?"
+                cursor.execute(query, (simplified_title,))
+                data = cursor.fetchall()
 
-            return "X"  # 연관 데이터 없음 (X)
+                for row in data:
+                    chrome_title = row[0]
+                    chrome_time = row[1]
 
-        except sqlite3.Error:
-            return "X"  # 오류 발생 시 연관 데이터 없음 (X)
+                    try:
+                        # Chrome 타임스탬프 변환
+                        kst_time_converted = convert_chrome_timestamp(chrome_time).astimezone(
+                            timezone(timedelta(hours=9))
+                        )
+                        browser_unix_timestamp = int(kst_time_converted.timestamp())
+                    except Exception:
+                        continue
 
-        finally:
-            if conn:
-                conn.close()
+                    # ±1초의 매칭 허용
+                    if chrome_title == simplified_title and abs(browser_unix_timestamp - ukg_unix_timestamp) <= 1:
+                        return "O"  # 연관 데이터 있음
+
+            except sqlite3.Error as e:
+                print(f"[DEBUG] SQLite 오류 발생: {e}")
+            finally:
+                if conn:
+                    conn.close()
+
+        return "X"  # 모든 히스토리 파일에서 연관 데이터 없음
 
     def update_related_data_status(self):
         print("[DEBUG] update_related_data_status 호출됨.")
@@ -408,92 +448,114 @@ class WebTableWidget(QWidget):
 
         print("[DEBUG] update_related_data_status 완료.")
 
-    def display_related_history_data(self, index=None):
+    def display_related_history_data(self, indexes=None):
         """
-        선택된 행의 관련 히스토리 데이터를 HTML 표 형식으로 오른쪽 데이터 뷰어에 표시합니다.
+        선택된 행의 관련 히스토리 데이터를 오른쪽 데이터 뷰어에 HTML 표 형식으로 표시합니다.
         """
-        if index is None:
-            self.data_viewer.setHtml("<p style='color: red;'>히스토리 데이터를 표시할 인덱스가 없습니다.</p>")
+        if not indexes:
+            self.data_viewer.setHtml("<p>히스토리 데이터를 표시할 인덱스가 없습니다.</p>")
             return
 
-        if not self.history_db_path:
-            self.data_viewer.setHtml("<p style='color: red;'>히스토리 파일 경로가 설정되지 않았습니다.</p>")
+        if not hasattr(self, "history_db_paths") or not self.history_db_paths:
+            self.data_viewer.setHtml("<p>히스토리 파일 경로가 설정되지 않았습니다.</p>")
             return
 
-        # 테이블에서 선택된 타이틀과 타임스탬프 가져오기
-        selected_title = self.table_view.model().index(index.row(), 1).data()
-        timestamp_ukg = self.table_view.model().index(index.row(), 2).data()
+        # 단일 QModelIndex를 리스트로 변환
+        if isinstance(indexes, QModelIndex):
+            indexes = [indexes]
 
-        if not selected_title or not timestamp_ukg:
-            self.data_viewer.setHtml("<p style='color: red;'>선택된 타이틀 또는 타임스탬프가 비어 있습니다.</p>")
-            return
+        table_rows = []  # 테이블의 행 데이터를 저장
 
-        # 타이틀 간소화
-        simplified_title = simplify_title(selected_title)
+        for index in indexes:
+            # 테이블에서 선택된 타이틀과 타임스탬프 가져오기
+            selected_title = self.table_view.model().index(index.row(), 1).data()
+            timestamp_ukg = self.table_view.model().index(index.row(), 2).data()
 
-        try:
-            # SQLite 연결
-            conn = sqlite3.connect(self.history_db_path)
-            conn.create_function("REGEXP", 2, regexp)
-            cursor = conn.cursor()
+            if not selected_title or not timestamp_ukg:
+                table_rows.append("<tr><td colspan='4'>선택된 타이틀 또는 타임스탬프가 비어 있습니다.</td></tr>")
+                continue
 
-            # 타임스탬프를 KST로 변환
-            try:
-                kst_time = datetime.strptime(timestamp_ukg, "%Y-%m-%d %H:%M:%S").replace(
-                    tzinfo=timezone(timedelta(hours=9))
-                )
-                unix_timestamp = int(kst_time.timestamp())
-            except ValueError as e:
-                self.data_viewer.setHtml(f"<p style='color: red;'>타임스탬프 변환 오류가 발생했습니다: {e}</p>")
-                return
+            simplified_title = simplify_title(selected_title)
 
-            # 히스토리 데이터 쿼리
-            query = "SELECT url, title, visit_count, last_visit_time FROM urls WHERE title REGEXP ?"
-            cursor.execute(query, (simplified_title,))
-            data = cursor.fetchall()
+            for history_db_path in self.history_db_paths:
+                try:
+                    # SQLite 연결
+                    conn = sqlite3.connect(history_db_path)
+                    conn.create_function("REGEXP", 2, regexp)
+                    cursor = conn.cursor()
 
-            if data:
-                html_content = """
-                <table style="width: 100%; border-collapse: collapse; font-family: Arial, sans-serif; font-size: 14px;">
-                    <thead>
-                        <tr style="background-color: #f2f2f2; border: 1px solid #ddd;">
-                            <th style="padding: 8px; border: 1px solid #ddd;">URL</th>
-                            <th style="padding: 8px; border: 1px solid #ddd;">Title</th>
-                            <th style="padding: 8px; border: 1px solid #ddd;">Visit Count</th>
-                            <th style="padding: 8px; border: 1px solid #ddd;">Last Visit Time</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                """
-                for row in data:
-                    url, title, visit_count, last_visit_time = row
-                    converted_time = convert_chrome_timestamp(last_visit_time).astimezone(
-                        timezone(timedelta(hours=9))
-                    )
-                    html_content += f"""
-                        <tr>
-                            <td style="padding: 8px; border: 1px solid #ddd;">
-                                <a href="{url}" target="_blank" style="text-decoration: none; color: blue;">{url}</a>
-                            </td>
-                            <td style="padding: 8px; border: 1px solid #ddd;">{title}</td>
-                            <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">{visit_count}</td>
-                            <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">{converted_time}</td>
-                        </tr>
-                    """
-                html_content += """
-                    </tbody>
-                </table>
-                """
-                self.data_viewer.setHtml(html_content)
-            else:
-                self.data_viewer.setHtml("<p>연관된 히스토리 데이터를 찾을 수 없습니다.</p>")
+                    # 타임스탬프를 KST로 변환
+                    try:
+                        kst_time = datetime.strptime(timestamp_ukg, "%Y-%m-%d %H:%M:%S").replace(
+                            tzinfo=timezone(timedelta(hours=9))
+                        )
+                        unix_timestamp = int(kst_time.timestamp())
+                    except ValueError as e:
+                        table_rows.append(f"<tr><td colspan='4'>타임스탬프 변환 오류: {e}</td></tr>")
+                        continue
 
-        except sqlite3.Error as e:
-            self.data_viewer.setHtml(f"<p style='color: red;'>히스토리 데이터를 로드하는 중 오류가 발생했습니다: {e}</p>")
+                    # 히스토리 데이터 쿼리
+                    query = "SELECT url, title, visit_count, last_visit_time FROM urls WHERE title REGEXP ?"
+                    cursor.execute(query, (simplified_title,))
+                    data = cursor.fetchall()
 
-        finally:
-            if conn:
-                conn.close()
+                    for row in data:
+                        chrome_title = row[1]
+                        chrome_time = row[3]
+
+                        # Chrome 시간도 KST로 변환
+                        kst_time_converted = convert_chrome_timestamp(chrome_time).astimezone(
+                            timezone(timedelta(hours=9))
+                        )
+                        browser_unix_timestamp = int(kst_time_converted.timestamp())
+
+                        # ±1초 허용
+                        if (
+                                simplified_title == chrome_title
+                                and abs(browser_unix_timestamp - unix_timestamp) <= 1
+                        ):
+                            converted_time = convert_chrome_timestamp(row[3]).astimezone(
+                                timezone(timedelta(hours=9))
+                            )
+                            table_rows.append(
+                                f"<tr>"
+                                f"<td style='border: 1px solid #ddd; padding: 8px; width: 200px; overflow: hidden; text-overflow: ellipsis;'>{row[0]}</td>"
+                                f"<td style='border: 1px solid #ddd; padding: 8px; width: 200px; overflow: hidden; text-overflow: ellipsis;'>{row[1]}</td>"
+                                f"<td style='border: 1px solid #ddd; padding: 8px; width: 100px; text-align: center;'>{row[2]}</td>"
+                                f"<td style='border: 1px solid #ddd; padding: 8px; width: 150px;'>{converted_time}</td>"
+                                f"</tr>"
+                            )
+
+                except sqlite3.Error as e:
+                    table_rows.append(f"<tr><td colspan='4'>히스토리 데이터를 로드하는 중 오류: {e}</td></tr>")
+                finally:
+                    if conn:
+                        conn.close()
+
+        # 테이블 HTML 생성
+        if table_rows:
+            html_content = (
+                    "<div style='width: 700px; height: 300px; overflow: auto; border: 1px solid #ddd;'>"
+                    "<table style='width: 100%; border-collapse: collapse; font-size: 14px;'>"
+                    "<thead>"
+                    "<tr style='background-color: #f2f2f2;'>"
+                    "<th style='border: 1px solid #ddd; padding: 10px; width: 200px;'>URL</th>"
+                    "<th style='border: 1px solid #ddd; padding: 10px; width: 200px;'>Title</th>"
+                    "<th style='border: 1px solid #ddd; padding: 10px; width: 100px; text-align: center;'>Visit Count</th>"
+                    "<th style='border: 1px solid #ddd; padding: 10px; width: 150px;'>Last Visit Time</th>"
+                    "</tr>"
+                    "</thead>"
+                    "<tbody>"
+                    + "".join(table_rows) +
+                    "</tbody>"
+                    "</table>"
+                    "</div>"
+            )
+        else:
+            html_content = "<p>연관된 히스토리 데이터를 찾을 수 없습니다.</p>"
+
+        # 텍스트 박스에 HTML 설정
+        self.data_viewer.setHtml(html_content)
 
     def copy_history_files(self, destination_folder):
         """브라우저 히스토리 파일 복사"""
