@@ -20,82 +20,125 @@ class InternalAuditWidget(QWidget):
         self.current_selected_box = None  # 현재 선택된 set-box를 추적하기 위한 변수
         self.last_clicked_timestamp = None  # 마지막으로 클릭한 이미지의 타임스탬프
         self.last_clicked_token = None      # 마지막으로 클릭한 이미지의 토큰
+        self.current_page = 1  # 현재 페이지
+        self.images_per_page = 28  # 페이지당 이미지 수
         self.setup_ui()
 
     def setup_ui(self):
         # 메인 레이아웃
         main_layout = QVBoxLayout(self)
         
-        # 검색 레이아웃 추가
-        search_layout = QHBoxLayout()
+        # 검색 레이아웃 추가 (QHBoxLayout 대신 QGridLayout 사용)
+        search_container = QWidget()
+        search_layout = QHBoxLayout(search_container)
+        search_layout.setContentsMargins(0, 0, 0, 0)
+        search_layout.setSpacing(5)
+        
+        # 왼쪽 검색 영역
+        left_layout = QHBoxLayout()
+        left_layout.setSpacing(5)
         
         # 키워드 입력 박스 추가
         search_label = QLabel("검색어:")
-        search_label.setToolTip("search example:\n"
-                              "Single Search: 검색어\n"
-                              "AND Search: 검색어1 && 검색어2\n"
-                              "OR Search: 검색어1 || 검색어2")
-        search_layout.addWidget(search_label)
+        search_label.setFixedWidth(50)
+        left_layout.addWidget(search_label)
         
         self.keyword_search = QLineEdit()
         self.keyword_search.setPlaceholderText("검색어 입력")
         self.keyword_search.setFixedWidth(250)
-        self.keyword_search.setToolTip("search example:\n"
-                                     "Single Search: 검색어\n"
-                                     "AND Search: 검색어1 && 검색어2\n"
-                                     "OR Search: 검색어1 || 검색어2")
-        search_layout.addWidget(self.keyword_search)
+        left_layout.addWidget(self.keyword_search)
 
         # Enter 키 시 search_images 호출
         self.keyword_search.returnPressed.connect(self.search_images)
 
+        # 입력 박스의 높이를 가져와서 버튼 스타일에 적용
+        input_height = self.keyword_search.sizeHint().height()
+
+        # 버튼들의 스타일과 크기 설정
+        button_style = f"""
+            QPushButton {{
+                max-width: 40px;
+                min-width: 40px;
+                height: {input_height}px;
+                /* padding-top/bottom: 0px, padding-left/right: 5px */
+                padding: 0px 5px;
+            }}
+        """
+
         # 검색 버튼
         search_button = QPushButton("검색")
+        search_button.setStyleSheet(button_style)
         search_button.clicked.connect(self.search_images)
-        search_layout.addWidget(search_button)
+        left_layout.addWidget(search_button)
 
         # 고급 버튼
         advanced_search_button = QPushButton("고급")
+        advanced_search_button.setStyleSheet(button_style)
         advanced_search_button.clicked.connect(self.show_advanced_search_dialog)
-        search_layout.addWidget(advanced_search_button)
+        left_layout.addWidget(advanced_search_button)
 
         # 초기화 버튼
         reset_button = QPushButton("초기화")
+        reset_button.setStyleSheet(button_style)
         reset_button.clicked.connect(self.reset_search)
-        search_layout.addWidget(reset_button)
+        left_layout.addWidget(reset_button)
         
-        # 검색 레이아웃에 stretch 추가하여 나머지 공간 채우기
-        search_layout.addStretch()
+        # 왼쪽 레이아웃을 검색 레이아웃에 추가
+        search_layout.addLayout(left_layout)
         
-        # 검색 레이아웃을 메인 레이아웃에 추가
-        main_layout.addLayout(search_layout)
+        # 오른쪽 페이지네이션 영역
+        right_layout = QHBoxLayout()
+        right_layout.setAlignment(Qt.AlignRight)  # 오른쪽 정렬
         
+        # 이전 페이지 버튼
+        self.prev_button = QPushButton("<")
+        self.prev_button.setFixedSize(30, 30)
+        self.prev_button.clicked.connect(lambda: self.change_page('prev'))
+        right_layout.addWidget(self.prev_button)
+        
+        # 페이지 번호 레이아웃
+        self.page_numbers_layout = QHBoxLayout()
+        self.page_numbers_layout.setSpacing(2)
+        right_layout.addLayout(self.page_numbers_layout)
+        
+        # 다음 페이지 버튼
+        self.next_button = QPushButton(">")
+        self.next_button.setFixedSize(30, 30)
+        self.next_button.clicked.connect(lambda: self.change_page('next'))
+        right_layout.addWidget(self.next_button)
+        
+        # 오른쪽 레이아웃을 검색 레이아웃에 추가
+        search_layout.addStretch()  # 왼쪽과 오른쪽 사이에 신축성 있는 공간 추가
+        search_layout.addLayout(right_layout)
+        
+        # 검색 컨테이너를 메인 레이아웃에 추가
+        main_layout.addWidget(search_container)
+
         # 스플리터 생성
         splitter = QSplitter(Qt.Vertical)
         
         # 이미지 디스플레이를 위한 스크롤 영역 생성
         self.image_scroll_area = QScrollArea()
         self.image_scroll_area.setWidgetResizable(True)
-        self.image_scroll_area.setMinimumHeight(400)  # 최소 높이 설정
+        self.image_scroll_area.setMinimumHeight(400)
         
-        # 이미지 컨테이너 위젯 설정
+        # 이미지 컨테이너 설정
         self.image_container = QWidget()
-        self.image_container.setMinimumWidth(800)  # 최소 너비 설정
+        self.image_container.setMinimumWidth(800)
         
-        # 이미지 컨테이너의 레이아웃을 QGridLayout으로 설정
+        # 이미지 레이아웃 설정
         self.image_layout = QGridLayout(self.image_container)
-        self.image_layout.setSpacing(2)  # 전체 간격을 2로 설정하여 여백 감소
-        self.image_layout.setHorizontalSpacing(2)  # 수평 간격 설정
-        self.image_layout.setVerticalSpacing(0)  # 수직 간격을 0으로 설정하여 상하 여백 제거
-        self.image_layout.setContentsMargins(0, 0, 0, 0)  # 레이아웃의 여백 제거
+        self.image_layout.setSpacing(2)
+        self.image_layout.setHorizontalSpacing(2)
+        self.image_layout.setVerticalSpacing(0)
+        self.image_layout.setContentsMargins(0, 0, 0, 0)
         
-        # 이미지 컨테이너를 스크롤 영역에 설정
         self.image_scroll_area.setWidget(self.image_container)
         
-        # 하단 텍스트 상자 생성
+        # 하단 텍스트 박스
         self.lower_text_box = QTextEdit()
         self.lower_text_box.setReadOnly(True)
-        self.lower_text_box.setMinimumHeight(200)  # 최소 높이 설정
+        self.lower_text_box.setMinimumHeight(200)
         
         # 스플리터에 위젯 추가
         splitter.addWidget(self.image_scroll_area)
@@ -104,7 +147,7 @@ class InternalAuditWidget(QWidget):
         # 스플리터 비율 설정 (7:3)
         splitter.setSizes([700, 300])
         
-        # 메인 레이아웃에 스플리 추가
+        # 메인 레이아웃에 스플리터 추가
         main_layout.addWidget(splitter)
         
         # 초기 텍스트 설정
@@ -120,6 +163,9 @@ class InternalAuditWidget(QWidget):
 
     def search_images(self):
         """OCR, App, Web, File 검색 수행"""
+        # 검색 시작 시 현재 페이지를 1로 초기화
+        self.current_page = 1
+        
         keyword = self.keyword_search.text().strip()
         if not keyword:
             self.load_all_images()
@@ -286,9 +332,20 @@ class InternalAuditWidget(QWidget):
         if not self.db_path:
             print("[Internal Audit] DB 경로가 설정되지 않아 이미지를 표시할 수 없습니다.")
             return
+        
         self.current_results = results
         self.current_selected_box = None
-
+        
+        # 전체 페이지 수 계산
+        total_pages = (len(results) + self.images_per_page - 1) // self.images_per_page
+        
+        # 현재 페이지의 시작/끝 인덱스 계산
+        start_idx = (self.current_page - 1) * self.images_per_page
+        end_idx = min(start_idx + self.images_per_page, len(results))
+        
+        # 현재 페이지의 결과만 표시
+        current_page_results = results[start_idx:end_idx]
+        
         # 컨테이너 너비 계산 방식 수정
         container_width = self.image_scroll_area.width() - 12  # 스크롤바 영역을 명시적으로 제외
         
@@ -327,7 +384,7 @@ class InternalAuditWidget(QWidget):
         center_layout.setContentsMargins(0, 0, 0, 0)
 
         # 이미지 배치
-        for index, (timestamp, image_token) in enumerate(results):
+        for index, (timestamp, image_token) in enumerate(current_page_results):
             # 이미지 토큰이 None인 경우 건너뛰기
             if image_token is None:
                 print(f"[Internal Audit] 이미지 토큰이 None인 항목 건너뛰기 - TimeStamp: {timestamp}")
@@ -419,6 +476,82 @@ class InternalAuditWidget(QWidget):
         
         # 중앙 컨테이너를 이미지 레이아웃에 추가
         self.image_layout.addWidget(center_container, 0, 0, Qt.AlignLeft | Qt.AlignTop)
+
+        # 페이지네이션 업데이트
+        self.update_pagination(total_pages)
+
+    def update_pagination(self, total_pages):
+        # 기존 페이지 번호 버튼 제거
+        while self.page_numbers_layout.count():
+            item = self.page_numbers_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        
+        # 현재 페이지가 속한 구간 계산
+        current_section = (self.current_page - 1) // 10
+        start_page = current_section * 10 + 1
+        end_page = min(start_page + 9, total_pages)
+        
+        # 공통 버튼 스타일
+        button_style = """
+            QPushButton {
+                background-color: #f0f0f0;
+                color: #333333;
+                border: none;
+                border-radius: 15px;
+                font-weight: bold;
+                font-size: 12pt;
+            }
+            QPushButton:hover {
+                background-color: #e0e0e0;
+            }
+            QPushButton:disabled {
+                background-color: #f0f0f0;
+                color: #a0a0a0;
+            }
+        """
+        
+        # 이전 버튼
+        self.prev_button.setStyleSheet(button_style)
+        self.prev_button.setEnabled(self.current_page > 1)
+        
+        # 페이지 번호 버튼 생성
+        for page in range(start_page, end_page + 1):
+            btn = QPushButton(str(page))
+            btn.setFixedSize(30, 30)
+            if page == self.current_page:
+                btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: #0078D7;
+                        color: white;
+                        border: none;
+                        border-radius: 15px;
+                        font-weight: bold;
+                        font-size: 12pt;
+                    }
+                """)
+            else:
+                btn.setStyleSheet(button_style)
+            btn.clicked.connect(lambda checked, p=page: self.change_page(p))
+            self.page_numbers_layout.addWidget(btn)
+        
+        # 다음 버튼 (마지막에 추가)
+        self.next_button.setStyleSheet(button_style)
+        self.next_button.setEnabled(self.current_page < total_pages)
+
+    def change_page(self, page_action):
+        total_pages = (len(self.current_results) + self.images_per_page - 1) // self.images_per_page
+        
+        if isinstance(page_action, int):
+            self.current_page = page_action
+        elif page_action == 'prev':
+            # 한 페이지씩 이동
+            self.current_page = max(1, self.current_page - 1)
+        elif page_action == 'next':
+            # 한 페이지씩 이동
+            self.current_page = min(total_pages, self.current_page + 1)
+        
+        self.display_images(self.current_results)
 
     def show_advanced_search_dialog(self):
         """고급 검색 대화상자 표시"""
@@ -642,6 +775,9 @@ class InternalAuditWidget(QWidget):
 
     def load_all_images(self):
         """모든 이미미지를 로드"""
+        # 페이지를 1로 초기화
+        self.current_page = 1
+        
         if self.db_path:
             try:
                 print("[Internal Audit] 모든 이미지 로드 시도")
