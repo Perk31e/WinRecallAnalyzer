@@ -732,8 +732,7 @@ class AdvancedSearchDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("고급 검색")
-        self.setMinimumWidth(600)  # 창의 최소 너비를 600으로 설정
-        self.setMinimumHeight(400)
+        self.setFixedSize(750, 400)
         self.search_terms = self.load_search_terms()
         self.setup_ui()
 
