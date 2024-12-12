@@ -753,16 +753,18 @@ class AdvancedSearchDialog(QDialog):
         # 스크롤 영역 생성
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)  # 가로 스크롤바 비활성화
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         
         # 스크롤 영역에 들어갈 컨테이너 위젯
         container = QWidget()
         layout = QVBoxLayout(container)
-        layout.setSpacing(10)  # 항목 간 간격 설정
+        layout.setSpacing(10)
         
         # 검색어 입력 영역
         self.search_entries = []
-        for i in range(5):
+        initial_count = max(5, len(self.search_terms))  # 저장된 검색어 수와 5 중 큰 값 사용
+        
+        for i in range(initial_count):
             entry_layout = QHBoxLayout()
             
             # enabled 체크박스
@@ -930,24 +932,30 @@ class AdvancedSearchDialog(QDialog):
 
     def get_search_query(self):
         """선택된 검색어들을 조합하여 검색 쿼리 생성"""
-        query_parts = []
-        enabled_entries = [
-            entry for entry in self.search_entries 
+        # 검색어명과 검색어를 매핑하는 딕셔너리 생성
+        name_to_term = {
+            entry['name'].text().strip(): entry['term'].text().strip()
+            for entry in self.search_entries
+            if entry['name'].text().strip() and entry['term'].text().strip()
+        }
+        
+        # 현재 입력된 검색어 가져오기
+        query = " ".join(
+            f"({entry['term'].text().strip()})"
+            for entry in self.search_entries
             if entry['enabled_search'].isChecked() and entry['term'].text().strip()
-        ]
+        )
         
-        for i, entry in enumerate(enabled_entries):
-            term = entry['term'].text().strip()
-            query_parts.append(f"({term})")
+        # 검색어에 {검색어명} 패턴이 있는지 확인
+        if re.search(r'\{([^}]+)\}', query):
+            # {검색어명} 패턴을 실제 검색어로 대체
+            def replace_name_with_term(match):
+                name = match.group(1).strip()
+                if name in name_to_term:
+                    return f"({name_to_term[name]})"
+                return match.group(0)  # 매칭되는 검색어명이 없으면 원래 텍스트 유지
             
-            # 마지막 엔트리가 아닐 경우에만 연산자 추가
-            if i < len(enabled_entries) - 1:
-                if entry['or_cb'].isChecked():
-                    query_parts.append("||")
-                elif entry['and_cb'].isChecked():
-                    query_parts.append("&&")
-                else:
-                    # 아무것도 선택되지 않은 경우 기본값으로 AND 사용
-                    query_parts.append("&&")
+            # 모든 {검색어명} 패턴을 실제 검색어로 대체
+            query = re.sub(r'\{([^}]+)\}', replace_name_with_term, query)
         
-        return " ".join(query_parts)
+        return query

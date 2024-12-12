@@ -28,9 +28,23 @@
     "or_checked": false
   },
   {
+    "enabled": false,
+    "name": "브라우저",
+    "term": "chrome || edge || whale",
+    "and_checked": true,
+    "or_checked": false
+  },
+  {
+    "enabled": false,
+    "name": "파일 상호작용",
+    "term": "다른 이름으로 저장 || 열기",
+    "and_checked": false,
+    "or_checked": false
+  },
+  {
     "enabled": true,
     "name": "시크릿 탭",
-    "term": "((Web == \"N/A\") && (chrome) && (다른 이름으로 저장 || 열기 ))",
+    "term": "(%Web% == \"N/A\") && {브라우저} && {파일 상호작용}",
     "and_checked": false,
     "or_checked": false
   }
