@@ -18,7 +18,7 @@ class InternalAuditWidget(QWidget):
         self.current_results = []  # 현재 결과를 저장할 리스트
         self.images_loaded = False  # 이미지 로드 여부 플래그
         self.current_selected_box = None  # 현재 선택된 set-box를 추적하기 위한 변수
-        self.last_clicked_timestamp = None  # 마지막으로 클릭한 이미지의 토릃타임스탬프
+        self.last_clicked_timestamp = None  # 마지막으로 클릭한 이미지의 타임스탬프
         self.last_clicked_token = None      # 마지막으로 클릭한 이미지의 토큰
         self.setup_ui()
 
@@ -129,62 +129,111 @@ class InternalAuditWidget(QWidget):
             print("[Internal Audit] DB 경로가 설정되지 않았습니다.")
             return
 
-        # 검색어에서 &&와 ||를 AND와 OR로 변환
-        keyword = keyword.replace("&&", "AND").replace("||", "OR")
-
         try:
             print(f"[Internal Audit] 검색 시작 - 키워드: {keyword}")
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
-            # 검색어를 파싱하여 SQL 조건 생성
-            def parse_expression(expression):
-                # 토큰화
-                tokens = re.split(r'(\s+AND\s+|\s+OR\s+|\(|\))', expression)
-                tokens = [token.strip() for token in tokens if token.strip()]
-
-                # 조건 스택
-                conditions = []
-                operators = []
-
-                def apply_operator():
-                    if len(conditions) < 2:
-                        return
-                    right = conditions.pop()
-                    left = conditions.pop()
-                    operator = operators.pop()
-                    conditions.append(f"({left} {operator} {right})")
-
-                for token in tokens:
-                    if token == '(':
-                        operators.append(token)
-                    elif token == ')':
-                        while operators and operators[-1] != '(':
-                            apply_operator()
-                        operators.pop()  # '(' 제거
-                    elif token.upper() in ['AND', 'OR']:
-                        while (operators and operators[-1] in ['AND', 'OR'] and
-                               (operators[-1] == 'AND' or token.upper() == 'OR')):
-                            apply_operator()
-                        operators.append(token.upper())
-                    else:
-                        conditions.append(f"""
-                            (wc.WindowTitle LIKE ? OR
-                             wctc.c2 LIKE ? OR
-                             a.Name LIKE ? OR
-                             w.Uri LIKE ? OR
-                             f.Path LIKE ?)
-                        """)
-                        params.extend([f"%{token}%" for _ in range(5)])  # 5개의 테이블에서 검색
-
-                while operators:
-                    apply_operator()
-
-                return conditions[0] if conditions else ""
-
             params = []
-            condition = parse_expression(keyword)
+            conditions = []
 
+            # == 연산자를 사용한 검색 패턴
+            field_patterns = {
+                r'%Title%\s*==\s*"([^"]*)"': ('wc.WindowTitle LIKE ?', 'wc.WindowTitle IS NULL'),
+                r'%App%\s*==\s*"([^"]*)"': ('a.Name LIKE ?', 'a.Name IS NULL'),
+                r'%Web%\s*==\s*"([^"]*)"': ('w.Uri LIKE ?', 'w.Uri IS NULL'),
+                r'%File%\s*==\s*"([^"]*)"': ('f.Path LIKE ?', 'f.Path IS NULL'),
+                r'%OCR%\s*==\s*"([^"]*)"': ('wctc.c2 LIKE ?', 'wctc.c2 IS NULL')
+            }
+
+            # 검색어 파싱
+            remaining_text = keyword
+            for pattern, (like_condition, null_condition) in field_patterns.items():
+                matches = re.finditer(pattern, remaining_text)
+                for match in matches:
+                    search_term = match.group(1)
+                    if search_term.lower() == "n/a":
+                        conditions.append(null_condition)
+                    else:
+                        conditions.append(like_condition)
+                        params.append(f"%{search_term}%")
+                    remaining_text = remaining_text.replace(match.group(0), "")
+
+            # 일반 검색어 처리 (남은 텍스트에서)
+            remaining_text = remaining_text.strip()
+            if remaining_text:
+                # AND/OR 검색 처리
+                def parse_expression(expression, patterns, param_list):
+                    # 토큰화
+                    tokens = re.split(r'(\s+\|\|\s+|\s+&&\s+|\(|\))', expression)
+                    tokens = [token.strip() for token in tokens if token.strip()]
+                    
+                    # 조건 스택
+                    conditions = []
+                    operators = []
+                    
+                    def apply_operator():
+                        if len(conditions) < 2:
+                            return
+                        right = conditions.pop()
+                        left = conditions.pop()
+                        operator = operators.pop()
+                        if operator == '||':
+                            conditions.append(f"({left} OR {right})")
+                        else:  # AND
+                            conditions.append(f"({left} AND {right})")
+                    
+                    for token in tokens:
+                        if token == '(':
+                            operators.append(token)
+                        elif token == ')':
+                            while operators and operators[-1] != '(':
+                                apply_operator()
+                            if operators:
+                                operators.pop()  # '(' 제거
+                        elif token in ['&&', '||']:
+                            while operators and operators[-1] not in ['(']:
+                                apply_operator()
+                            operators.append('||' if token == '||' else 'AND')
+                        else:
+                            # 필드별 검색 패턴 확인
+                            field_match = False
+                            for pattern, (like_condition, null_condition) in patterns.items():
+                                if re.match(pattern, token):
+                                    match = re.match(pattern, token)
+                                    search_term = match.group(1)
+                                    if search_term.lower() == "n/a":
+                                        conditions.append(null_condition)
+                                    else:
+                                        conditions.append(like_condition)
+                                        param_list.append(f"%{search_term}%")
+                                    field_match = True
+                                    break
+                            
+                            # 일반 검색어 처리
+                            if not field_match:
+                                conditions.append(f"""
+                    (wc.WindowTitle LIKE ? OR
+                     a.Name LIKE ? OR
+                     wctc.c2 LIKE ?)
+                """)
+                                param_list.extend([f"%{token}%" for _ in range(3)])
+                    
+                    while operators:
+                        apply_operator()
+                    
+                    return conditions[0] if conditions else ""
+
+            # 일반 검색어 처리 (남은 텍스트에서)
+            remaining_text = keyword.strip()
+            if remaining_text:
+                condition = parse_expression(remaining_text, field_patterns, params)
+                if condition:
+                    conditions.append(condition)
+
+            # 최종 쿼리 생성
+            where_clause = " AND ".join(f"({cond})" for cond in conditions) if conditions else "1=1"
+            
             query = f"""
             SELECT DISTINCT wc.TimeStamp, wc.ImageToken
             FROM WindowCapture wc
@@ -195,9 +244,12 @@ class InternalAuditWidget(QWidget):
             LEFT JOIN Web w ON wcwr.WebId = w.Id
             LEFT JOIN WindowCaptureFileRelation wcfr ON wc.Id = wcfr.WindowCaptureId
             LEFT JOIN File f ON wcfr.FileId = f.Id
-            WHERE {condition}
+            WHERE {where_clause}
             ORDER BY wc.TimeStamp ASC;
             """
+            
+            print(f"[Internal Audit] 실행 SQL: {query}")
+            print(f"[Internal Audit] 파라미터: {params}")
             
             cursor.execute(query, params)
             results = cursor.fetchall()
@@ -477,10 +529,10 @@ class InternalAuditWidget(QWidget):
             # 검색어 파싱하여 개별 키워드 추출
             search_terms = []
             if current_search:
-                # 괄호와 연산자를 기준으로 분리
-                terms = re.findall(r'\(|\)|\|\||&&|[^()\s&&\|\|]+', current_search)
+                # 괄호와 연산자를 기준으로 분리 (== 연산자 추가)
+                terms = re.findall(r'\(|\)|\|\||&&|==|[^()\s&&\|\|=]+', current_search)
                 # 실제 검색어만 추출 (괄호와 연산자 제외)
-                search_terms = [term for term in terms if term not in ['(', ')', '&&', '||']]
+                search_terms = [term for term in terms if term not in ['(', ')', '&&', '||', '==']]
             
             # search_info 변수 초기화
             search_info = ""
@@ -488,10 +540,15 @@ class InternalAuditWidget(QWidget):
             # 검색어가 있는 경우에만 search_info 설정
             if search_terms:
                 # 검색어에서 &&와 ||를 AND와 OR로 변환
-                display_search = current_search.replace("&&", "AND").replace("||", "OR")
+                display_search = current_search
                 
+                # == 연산자는 검정색으로 표시
+                display_search = re.sub(r'(==)', r'\1', display_search)
+                
+                # 검색어 강조
                 for term in search_terms:
-                    display_search = display_search.replace(term, f'<b style="font-size: 14pt; color: #0078D7;">{term}</b>')
+                    if term not in ['==', '&&', '||']:  # 연산자는 강조하지 않음
+                        display_search = display_search.replace(term, f'<b style="font-size: 14pt; color: #0078D7;">{term}</b>')
 
                 search_info = f"""
                             <p><b style='font-size: 12pt;'>검색어</b> {display_search}가 포함된 이미지입니다.</p>

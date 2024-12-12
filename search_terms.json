@@ -7,23 +7,30 @@
     "or_checked": true
   },
   {
-    "enabled": true,
+    "enabled": false,
     "name": "메신저",
     "term": "discord || telegram || kakaotalk",
     "and_checked": false,
     "or_checked": true
   },
   {
-    "enabled": true,
+    "enabled": false,
     "name": "채용",
     "term": "채용 || 고용 || 이직",
     "and_checked": true,
     "or_checked": false
   },
   {
-    "enabled": true,
+    "enabled": false,
     "name": "드라이브",
     "term": "mybox || drive || 드라이브 || 클라우드",
+    "and_checked": true,
+    "or_checked": false
+  },
+  {
+    "enabled": true,
+    "name": "시크릿 탭",
+    "term": "((Web == \"N/A\") && (chrome) && (다른 이름으로 저장 || 열기 ))",
     "and_checked": false,
     "or_checked": false
   }
