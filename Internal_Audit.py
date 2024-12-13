@@ -40,11 +40,33 @@ class InternalAuditWidget(QWidget):
         
         # 키워드 입력 박스 추가
         search_label = QLabel("검색어:")
+        search_label.setToolTip("search example:\n"
+                                "Single Search: 검색어\n"
+                                "AND Search: 검색어1 && 검색어2\n"
+                                "OR Search: 검색어1 || 검색어2\n"
+                                "Window Title: %Title% == \"검색어\"\n"
+                                "App Name: %App% == \"검색어\"\n"
+                                "Web URL: %Web% == \"검색어\"\n"
+                                "File Path: %File% == \"검색어\"\n"
+                                "OCR Text: %OCR% == \"검색어\""
+                                )
+
         search_label.setFixedWidth(50)
         left_layout.addWidget(search_label)
         
         self.keyword_search = QLineEdit()
         self.keyword_search.setPlaceholderText("검색어 입력")
+        self.keyword_search.setToolTip("search example:\n"
+                                    "Single Search: 검색어\n"
+                                    "AND Search: 검색어1 && 검색어2\n"
+                                    "OR Search: 검색어1 || 검색어2\n"
+                                    "Window Title: %Title% == \"검색어\"\n"
+                                    "App Name: %App% == \"검색어\"\n"
+                                    "Web URL: %Web% == \"검색어\"\n"
+                                    "File Path: %File% == \"검색어\"\n"
+                                    "OCR Text: %OCR% == \"검색어\""
+                                    )
+
         self.keyword_search.setFixedWidth(250)
         left_layout.addWidget(self.keyword_search)
 
