@@ -142,7 +142,7 @@ class InternalAuditWidget(QWidget):
         # 이미지 디스플레이를 위한 스크롤 영역 생성
         self.image_scroll_area = QScrollArea()
         self.image_scroll_area.setWidgetResizable(True)
-        self.image_scroll_area.setMinimumHeight(400)
+        # self.image_scroll_area.setMinimumHeight(400)
         
         # 이미지 컨테이너 설정
         self.image_container = QWidget()
@@ -160,7 +160,7 @@ class InternalAuditWidget(QWidget):
         # 하단 텍스트 박스
         self.lower_text_box = QTextEdit()
         self.lower_text_box.setReadOnly(True)
-        self.lower_text_box.setMinimumHeight(200)
+        # self.lower_text_box.setMinimumHeight(200)
         
         # 스플리터에 위젯 추가
         splitter.addWidget(self.image_scroll_area)
