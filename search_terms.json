@@ -14,7 +14,7 @@
     "or_checked": true
   },
   {
-    "enabled": true,
+    "enabled": false,
     "name": "압축 파일",
     "term": ".zip || .rar || .7z || .tar || .gz || .bz2",
     "and_checked": false,
@@ -56,10 +56,45 @@
     "or_checked": true
   },
   {
-    "enabled": true,
+    "enabled": false,
+    "name": "브라우저",
+    "term": "chrome || 크롬 || edge || 엣지 || safari || 사파리 || firefox || 파이어폭스 || opera || 오페라 || brave || 브레이브 || vivaldi || 비발디 || whale || 웨일",
+    "and_checked": false,
+    "or_checked": true
+  },
+  {
+    "enabled": false,
     "name": "메신저",
-    "term": "kakaotalk || 카카오톡",
+    "term": "kakaotalk || 카카오톡 || discord || 디스코드 || telegram || 텔레그램 || line || 라인",
     "and_checked": false,
     "or_checked": false
+  },
+  {
+    "enabled": false,
+    "name": "메일",
+    "term": "mail || 메일 || outlook || 아웃룩",
+    "and_checked": false,
+    "or_checked": false
+  },
+  {
+    "enabled": false,
+    "name": "클라우드",
+    "term": "mybox || 마이박스 || dropbox || 드롭박스 || 드랍박스 || onedrive || 원드라이브 || google drive || 구글드라이브 || box || 박스 || cloud || 클라우드",
+    "and_checked": false,
+    "or_checked": true
+  },
+  {
+    "enabled": false,
+    "name": "기밀 자료",
+    "term": "confidential || 기밀 || secret || 시크릿 ||설계도 || 내부문서",
+    "and_checked": false,
+    "or_checked": true
+  },
+  {
+    "enabled": false,
+    "name": "시크릿 탭",
+    "term": "(%Web% == "N/A") && {브라우저}",
+    "and_checked": false,
+    "or_checked": true
   }
 ]

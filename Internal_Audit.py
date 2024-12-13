@@ -374,9 +374,15 @@ class InternalAuditWidget(QWidget):
                 else:
                     self.clear_images()
                     self.lower_text_box.setText("검색 결과가 없습니다.")
+                    self.current_results = []
+                    self.current_page = 1
+                    self.update_pagination(1)
             else:
                 self.clear_images()
                 self.lower_text_box.setText("검색 결과가 없습니다.")
+                self.current_results = []
+                self.current_page = 1
+                self.update_pagination(1)
                 
         except sqlite3.Error as e:
             print(f"[Internal Audit] 데이터베이스 오류: {e}")
