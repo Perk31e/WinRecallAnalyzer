@@ -188,14 +188,47 @@ class InternalAuditWidget(QWidget):
         # 검색 시작 시 현재 페이지를 1로 초기화
         self.current_page = 1
         
-        keyword = self.keyword_search.text().strip()
-        if not keyword:
+        original_keyword = self.keyword_search.text().strip()  # 원본 키워드 저장
+        if not original_keyword:
             self.load_all_images()
             return
         
         if self.db_path is None:
             print("[Internal Audit] DB 경로가 설정되지 않았습니다.")
             return
+
+        # {} 패턴 여부 확인
+        has_braces = bool(re.search(r'\{([^}]+)\}', original_keyword))
+
+        processed_keyword = original_keyword
+        name_to_term = {}
+
+        # {}가 있을 때만 search_terms.json 로드
+        if has_braces and os.path.exists('search_terms.json'):
+            try:
+                with open('search_terms.json', 'r', encoding='utf-8') as f:
+                    saved_terms = json.load(f)
+                    # saved_terms: [{'enabled': bool, 'name': str, 'term': str, ...}, ...]
+                    for t in saved_terms:
+                        if 'name' in t and 'term' in t:
+                            name_to_term[t['name']] = t['term']
+            except Exception as e:
+                print(f"[Internal Audit] search_terms.json 로드 오류: {e}")
+
+        # {}가 있을 때만 {} 패턴을 실제 검색어로 변환
+        if has_braces:
+            def replace_braces(match):
+                key = match.group(1).strip()
+                if key in name_to_term:
+                    # 실제 검색어를 ()로 감싸기
+                    return f"({name_to_term[key]})"
+                else:
+                    # 해당 검색어명이 search_terms.json에 없으면 그대로 둔다.
+                    return match.group(0)
+
+            processed_keyword = re.sub(r'\{([^}]+)\}', replace_braces, processed_keyword)
+        
+        keyword = processed_keyword  # 이후 로직은 processed_keyword를 사용하여 검색
 
         try:
             print(f"[Internal Audit] 검색 시작 - 키워드: {keyword}")
@@ -679,52 +712,108 @@ class InternalAuditWidget(QWidget):
             cursor = conn.cursor()
             
             # 현재 검색어 가져오기
-            current_search = self.keyword_search.text().strip()
-            
-            # 검색어 파싱하여 개별 키워드 추출
-            search_terms = []
-            if current_search:
-                # 괄호와 연산자를 기준으로 분리 (== 연산자 추가)
-                terms = re.findall(r'\(|\)|\|\||&&|==|[^()\s&&\|\|=]+', current_search)
-                # 실제 검색어만 추출 (괄호와 연산자 제외)
-                search_terms = [term for term in terms if term not in ['(', ')', '&&', '||', '==']]
-            
-            # search_info 변수 초기화
-            search_info = ""
-            
-            # 검색어가 있는 경우에만 search_info 설정
-            if search_terms:
-                # 검색어에서 &&와 ||를 AND와 OR로 변환
-                display_search = current_search
-                
-                # == 연산자는 검정색으로 표시
-                display_search = re.sub(r'(==)', r'\1', display_search)
-                
-                # 검색어 강조
-                for term in search_terms:
-                    if term not in ['==', '&&', '||']:  # 연산자는 강조하지 않음
-                        display_search = display_search.replace(term, f'<b style="font-size: 14pt; color: #0078D7;">{term}</b>')
+            original_search = self.keyword_search.text().strip()
 
-                search_info = f"""
-                            <p><b style='font-size: 12pt;'>검색어</b> {display_search}가 포함된 이미지입니다.</p>
-                            <hr style='border: 1px solid #e0e0e0; margin: 10px 0;'>
-                            """
+            # search_terms.json 로드해서 name_to_term 딕셔너리 구성
+            # {} 패턴 여부 확인
+            has_braces = bool(re.search(r'\{([^}]+)\}', original_search))
+            name_to_term = {}
+            if has_braces and os.path.exists('search_terms.json'):
+                try:
+                    with open('search_terms.json', 'r', encoding='utf-8') as f:
+                        saved_terms = json.load(f)
+                        for t in saved_terms:
+                            if 'name' in t and 'term' in t:
+                                name_to_term[t['name']] = t['term']
+                except Exception as e:
+                    print(f"[Internal Audit] search_terms.json 로드 오류: {e}")
 
-            # 검색어 강조 함수
-            def highlight_text(text, terms):
-                if not text or not terms:
-                    return text if text else 'N/A'
-                # 각 검색어에 대해 강조 처리
-                highlighted = text
+            # {}가 있을 때만 실제 검색어로 변환
+            processed_search = original_search
+            if has_braces:
+                def replace_braces(match):
+                    key = match.group(1).strip()
+                    if key in name_to_term:
+                        # 실제 검색어를 ()로 감싸기. 예: (jpg || jpeg || png ...)
+                        return f"({name_to_term[key]})"
+                    else:
+                        return match.group(0)
+
+                processed_search = re.sub(r'\{([^}]+)\}', replace_braces, processed_search)
+
+            # 실제 하이라이트할 검색어들 추출
+            def extract_search_terms(search_str):
+                # 연산자와 괄호를 개행으로 치환
+                temp = re.sub(r'(\|\||&&|==|\(|\))', '\n', search_str)
+                # 개행 기준으로 split
+                lines = [line.strip() for line in temp.split('\n') if line.strip()]
+                return lines
+
+            highlight_terms = extract_search_terms(processed_search)
+
+            # 검색어 표시용 함수
+            def highlight_search_display(search_str, terms):
+                # 여기서 {} 안의 단어는 나중에 처리하므로 지금은 단어 강조만 처리
+                display = search_str
+                # term 강조 (파란색 굵게) - 하지만 {} 내는 나중에 처리
+                # 우선 여기서는 기존처럼 일반 단어만 파란색 굵게 처리
+                # 단, {검색어명} 형식은 나중에 별도 처리할테니 일단 이 함수에서는
+                # highlight_terms(실제 jpg, png 등)만 처리하면 됨.
+                
+                # placeholder( {검색어명} )는 여기서 파란색 처리하지 않음.
+                # highlight_terms에는 실제 파일 확장자나 단일 검색어들(jpg, png...)이 들어있음.
+                
+                # 우선 {..} 구문을 임시로 빼내어 단어 강조 -> 복원 로직 수행 X
+                # 여기서는 highlight_terms는 단어 강조를 위해 색을 바꾸는데,
+                # {..} 안에 있는 단어는 highlight하지 않을것이므로 그냥 단순히
+                # search_str 내에서 highlight_terms에 있는 단어들을 파란색으로 표시한다.
+                # 하지만 여기서 원 요청사항은 {} 안의 명칭을 파랗게 하고 싶지만
+                # braces 자체는 파란색 하지 말라고 했다. 그러므로 아래에서는 일단
+                # highlight_terms는 중괄호와 상관없이 일반 단어 강조.
+                # 이후 별도의 단계에서 {검색어명}을 처리한다.
+
+                # { ... } 구문은 나중에 처리하기 위해 임시 치환
+                placeholders = re.findall(r'\{[^}]+\}', display)
+                placeholder_map = {}
+                for i, p in enumerate(placeholders):
+                    placeholder_map[f"__PLACEHOLDER_{i}__"] = p
+                temp_display = display
+                for k, v in placeholder_map.items():
+                    temp_display = temp_display.replace(v, k)
+
+                # highlight_terms에 대해 파란색 굵게 처리
+                # 하지만 highlight_terms는 jpg, png 같은 실제 검색어 단어들
+                # 여기서는 검색어명 강조 안함
                 for term in terms:
-                    pattern = re.escape(term)
-                    highlighted = re.sub(
-                        f'({pattern})',
-                        r'<b style="font-size: 14pt; background-color: yellow;">\1</b>',
-                        highlighted,
+                    temp_display = re.sub(
+                        re.escape(term),
+                        f'<b style="font-size:14pt; color:#0078D7;">\\g<0></b>',
+                        temp_display,
                         flags=re.IGNORECASE
                     )
-                return highlighted
+
+                # placeholder 복원
+                for k, v in placeholder_map.items():
+                    temp_display = temp_display.replace(k, v)
+
+                return temp_display
+
+            # search_info 만들기
+            search_info = ""
+            if highlight_terms:
+                display_search = highlight_search_display(original_search, highlight_terms)
+                # 이제 {검색어명} 내 검색어명을 파란색 굵게 크게 표시 ({}는 그대로)
+                # 예: {이미지 파일} -> {<b style="font-size:14pt; color:#0078D7;">이미지 파일</b>}
+                display_search = re.sub(
+                    r'\{([^}]+)\}',
+                    r'{<b style="font-size:14pt; color:#0078D7; font-weight:bold;">\1</b>}',
+                    display_search
+                )
+
+                search_info = f"""
+                        <p><b style='font-size: 12pt;'>검색어</b> {display_search}가 포함된 이미지입니다.</p>
+                        <hr style='border: 1px solid #e0e0e0; margin: 10px 0;'>
+                        """
 
             query = """
             SELECT 
@@ -750,35 +839,46 @@ class InternalAuditWidget(QWidget):
             result = cursor.fetchone()
             conn.close()
 
+            def highlight_text(text, terms):
+                if not text:
+                    return 'N/A'
+                highlighted = text
+                for t in terms:
+                    pattern = re.escape(t)
+                    highlighted = re.sub(
+                        pattern,
+                        r'<span style="background-color: yellow; font-weight: bold; font-size:14pt;">\g<0></span>',
+                        highlighted,
+                        flags=re.IGNORECASE
+                    )
+                return highlighted
+
             if result:
                 timestamp, window_title, app_names, web_uris, file_paths, ocr_text = result
                 
-                # Unix timestamp를 datetime으로 변환
                 dt = datetime.fromtimestamp(timestamp / 1000)
                 formatted_time = dt.strftime("%Y-%m-%d %H:%M:%S")
                 
-                # 검과 텍스트 구성 (순서 변경 및 WindowTitle 강조 추가)
                 output_text = f"""<div style='font-size: 12pt;'>
                                 <p><b style='font-size: 12pt;'>Time:</b> {formatted_time}</p>
                                 
                                 {search_info}
 
-                                <p><b style='font-size: 12pt;'>Window Title:</b> {highlight_text(window_title, search_terms) if window_title else 'N/A'}</p>
+                                <p><b style='font-size: 12pt;'>Window Title:</b> {highlight_text(window_title, highlight_terms) if window_title else 'N/A'}</p>
                                 <hr style='border: 1px solid #e0e0e0; margin: 10px 0;'>
 
-                                <p><b style='font-size: 12pt;'>애플리케이션 명:</b> {highlight_text(app_names, search_terms) if app_names else 'N/A'}</p>
+                                <p><b style='font-size: 12pt;'>애플리케이션 명:</b> {highlight_text(app_names, highlight_terms) if app_names else 'N/A'}</p>
                                 <hr style='border: 1px solid #e0e0e0; margin: 10px 0;'>
 
-                                <p><b style='font-size: 12pt;'>Web Uri:</b> {highlight_text(web_uris, search_terms) if web_uris else 'N/A'}</p>
+                                <p><b style='font-size: 12pt;'>Web Uri:</b> {highlight_text(web_uris, highlight_terms) if web_uris else 'N/A'}</p>
                                 <hr style='border: 1px solid #e0e0e0; margin: 10px 0;'>
 
-                                <p><b style='font-size: 12pt;'>File Path:</b> {highlight_text(file_paths, search_terms) if file_paths else 'N/A'}</p>
+                                <p><b style='font-size: 12pt;'>File Path:</b> {highlight_text(file_paths, highlight_terms) if file_paths else 'N/A'}</p>
                                 """
 
                 if ocr_text:
-                    # OCR 텍스트 정제 및 강조
                     cleaned_text = self.clean_ocr_text(ocr_text)
-                    highlighted_text = highlight_text(cleaned_text, search_terms)
+                    highlighted_text = highlight_text(cleaned_text, highlight_terms)
                     
                     output_text += f"""
                                     <hr style='border: 1px solid #e0e0e0; margin: 10px 0;'>
@@ -1089,31 +1189,37 @@ class AdvancedSearchDialog(QDialog):
                 entry['or_cb'].setChecked(term_data.get('or_checked', False))
 
     def get_search_query(self):
-        """선택된 검색어들을 조합하여 검색 쿼리 생성"""
-        # 검색어명과 검색어를 매핑하는 딕셔너리 생성
-        name_to_term = {
-            entry['name'].text().strip(): entry['term'].text().strip()
+        """선택된 검색어들을 {}로 감싸진 검색어명과 AND/OR로 연결하여 반환"""
+        # 활성화된 검색어명들을 추출
+        enabled_entries = [
+            (entry['name'].text().strip(), entry['and_cb'].isChecked(), entry['or_cb'].isChecked())
             for entry in self.search_entries
-            if entry['name'].text().strip() and entry['term'].text().strip()
-        }
+            if entry['enabled_search'].isChecked() and entry['name'].text().strip()
+        ]
+
+        # enabled_entries는 [(name, and_checked, or_checked), ...] 형태
+        # 예: [("원소", False, True), ("과학", False, False)] 등
+        # 첫 번째 검색어 앞에는 연산자 없이, 두 번째 검색어부터는 선택한 연산자(|| 또는 &&)를 붙여줍니다.
         
-        # 현재 입력된 검색어 가져오기
-        query = " ".join(
-            f"({entry['term'].text().strip()})"
-            for entry in self.search_entries
-            if entry['enabled_search'].isChecked() and entry['term'].text().strip()
-        )
-        
-        # 검색어에 {검색어명} 패턴이 있는지 확인
-        if re.search(r'\{([^}]+)\}', query):
-            # {검색어명} 패턴을 실제 검색어로 대체
-            def replace_name_with_term(match):
-                name = match.group(1).strip()
-                if name in name_to_term:
-                    return f"({name_to_term[name]})"
-                return match.group(0)  # 매칭되는 검색어명이 없으면 원래 텍스트 유지
-            
-            # 모든 {검색어명} 패턴을 실제 검색어로 대체
-            query = re.sub(r'\{([^}]+)\}', replace_name_with_term, query)
-        
-        return query
+        final_query = ""
+        for i, (name, and_checked, or_checked) in enumerate(enabled_entries):
+            # 검색어명에 {} 감싸기
+            placeholder = f"{{{name}}}"
+
+            if i == 0:
+                # 첫 번째 검색어에는 연산자 없이 추가
+                final_query = placeholder
+            else:
+                # 두 번째 검색어부터는 이전 검색어 뒤에 연산자와 함께 추가
+                # AND가 체크되었다면 '&&', OR이 체크되었다면 '||'
+                # 둘 다 체크가 안되거나 둘 다 체크된 경우 등은 발생하지 않는다고 가정
+                # (만약 그런 경우가 있다면 기본 연산자를 설정하거나 추가 검증이 필요)
+                operator = "||"
+                if and_checked:
+                    operator = "&&"
+                elif or_checked:
+                    operator = "||"
+                
+                final_query += f" {operator} {placeholder}"
+
+        return final_query
