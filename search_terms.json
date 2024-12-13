@@ -1,50 +1,64 @@
 [
   {
     "enabled": false,
-    "name": "채용 사이트",
-    "term": "사람인 || saramin",
+    "name": "이미지 파일",
+    "term": "jpg || jpeg || png || gif || bmp || webp || svg || tiff || ico",
+    "and_checked": false,
+    "or_checked": true
+  },
+  {
+    "enabled": false,
+    "name": "문서 파일",
+    "term": "pdf || doc || docx || xls || xlsx || ppt || pptx || txt || rtf || odt || ods || odp",
+    "and_checked": false,
+    "or_checked": true
+  },
+  {
+    "enabled": false,
+    "name": "압축 파일",
+    "term": "zip || rar || 7z || tar || gz || bz2",
+    "and_checked": false,
+    "or_checked": true
+  },
+  {
+    "enabled": false,
+    "name": "오디오 파일",
+    "term": "mp3 || wav || ogg || flac || m4a || aac",
+    "and_checked": false,
+    "or_checked": true
+  },
+  {
+    "enabled": false,
+    "name": "비디오 파일",
+    "term": "mp4 || avi || mkv || mov || wmv || flv || webm",
+    "and_checked": false,
+    "or_checked": true
+  },
+  {
+    "enabled": false,
+    "name": "코드/개발 파일",
+    "term": "js || jsx || ts || tsx || html || css || scss || json || xml || yaml || yml || md",
+    "and_checked": false,
+    "or_checked": true
+  },
+  {
+    "enabled": false,
+    "name": "CAD/3D 파일",
+    "term": "dwg || dxf || stl || obj",
+    "and_checked": false,
+    "or_checked": true
+  },
+  {
+    "enabled": false,
+    "name": "기타 파일",
+    "term": "csv || sql || db || mdb || accdb || psd || ai || eps",
     "and_checked": false,
     "or_checked": true
   },
   {
     "enabled": false,
     "name": "메신저",
-    "term": "discord || telegram || kakaotalk",
-    "and_checked": false,
-    "or_checked": true
-  },
-  {
-    "enabled": false,
-    "name": "채용",
-    "term": "채용 || 고용 || 이직",
-    "and_checked": true,
-    "or_checked": false
-  },
-  {
-    "enabled": false,
-    "name": "드라이브",
-    "term": "mybox || drive || 드라이브 || 클라우드",
-    "and_checked": true,
-    "or_checked": false
-  },
-  {
-    "enabled": false,
-    "name": "브라우저",
-    "term": "chrome || edge || whale",
-    "and_checked": true,
-    "or_checked": false
-  },
-  {
-    "enabled": false,
-    "name": "파일 상호작용",
-    "term": "다른 이름으로 저장 || 열기",
-    "and_checked": false,
-    "or_checked": false
-  },
-  {
-    "enabled": true,
-    "name": "시크릿 탭",
-    "term": "(%Web% == \"N/A\") && {브라우저} && {파일 상호작용}",
+    "term": "kakaotalk || 카카오톡",
     "and_checked": false,
     "or_checked": false
   }
