@@ -1,5 +1,54 @@
 [
   {
+    "enabled": true,
+    "name": "파일 공유 플랫폼 사용",
+    "term": "cloud || drive || dropbox || shared drive || 공유 폴더 || network drive || 네트워크 드라이브 || smb || ftp || nfs || wetransfer || onedrive || sharepoint || 파일 공유",
+    "and_checked": false,
+    "or_checked": false
+  },
+  {
+    "enabled": false,
+    "name": "기밀 자료",
+    "term": "confidential || 기밀 || secret || 시크릿 ||설계도 || 내부문서",
+    "and_checked": false,
+    "or_checked": true
+  },
+  {
+    "enabled": false,
+    "name": "민감 정보 포함 여부",
+    "term": "주민등록번호 || 카드 || 계좌 || 전화 || 비밀번호 || 암호 || API 키 || 토큰 || 인증 코드",
+    "and_checked": false,
+    "or_checked": false
+  },
+  {
+    "enabled": false,
+    "name": "화면 캡처 및 기록",
+    "term": "화면 캡처 || 스크린샷 || snipping tool || screenshot || recording || 녹화",
+    "and_checked": false,
+    "or_checked": false
+  },
+  {
+    "enabled": false,
+    "name": "비인가 프로그램 실행",
+    "term": "cmd || powershell || bash || 터미널 || 스크립트 실행 || 명령 프롬프트",
+    "and_checked": false,
+    "or_checked": false
+  },
+  {
+    "enabled": false,
+    "name": "기밀 문서 유출",
+    "term": "({문서 파일} || {압축 파일} || {코드/개발 파일} || {CAD/3D 파일} || {기타 파일} || {이미지 파일} || {오디오 파일} || {비디오 파일}) && {파일 상호작용}",
+    "and_checked": false,
+    "or_checked": false
+  },
+  {
+    "enabled": false,
+    "name": "시크릿 탭",
+    "term": "(%Web% == N/A) && {브라우저}",
+    "and_checked": false,
+    "or_checked": true
+  },
+  {
     "enabled": false,
     "name": "이미지 파일",
     "term": ".jpg || .jpeg || .png || .gif || .bmp || .webp || .svg || .tiff || .ico",
@@ -80,55 +129,6 @@
     "enabled": false,
     "name": "파일 상호작용",
     "term": "{upload || 업로드 || 저장 || save || download || 다운로드 || 저장 중 || save as || 파일 저장 || 다운 받기 || 다른 이름으로 저장}",
-    "and_checked": false,
-    "or_checked": true
-  },
-  {
-    "enabled": false,
-    "name": "파일 공유 플랫폼 사용",
-    "term": "cloud || drive || dropbox || shared drive || 공유 폴더 || network drive || 네트워크 드라이브 || smb || ftp || nfs || wetransfer || onedrive || sharepoint || 파일 공유",
-    "and_checked": false,
-    "or_checked": false
-  },
-  {
-    "enabled": false,
-    "name": "기밀 자료",
-    "term": "confidential || 기밀 || secret || 시크릿 ||설계도 || 내부문서",
-    "and_checked": false,
-    "or_checked": true
-  },
-  {
-    "enabled": false,
-    "name": "민감 정보 포함 여부",
-    "term": "주민등록번호 || 카드 || 계좌 || 전화 || 비밀번호 || 암호 || API 키 || 토큰 || 인증 코드",
-    "and_checked": false,
-    "or_checked": false
-  },
-  {
-    "enabled": false,
-    "name": "화면 캡처 및 기록",
-    "term": "화면 캡처 || 스크린샷 || snipping tool || screenshot || recording || 녹화",
-    "and_checked": false,
-    "or_checked": false
-  },
-  {
-    "enabled": false,
-    "name": "비인가 프로그램 실행",
-    "term": "cmd || powershell || bash || 터미널 || 스크립트 실행 || 명령 프롬프트",
-    "and_checked": false,
-    "or_checked": false
-  },
-  {
-    "enabled": false,
-    "name": "기밀 문서 유출",
-    "term": "({문서 파일} || {압축 파일} || {코드/개발 파일} || {CAD/3D 파일} || {기타 파일} || {이미지 파일} || {오디오 파일} || {비디오 파일}) && {파일 상호작용}",
-    "and_checked": false,
-    "or_checked": false
-  },
-  {
-    "enabled": true,
-    "name": "시크릿 탭",
-    "term": "(%Web% == N/A) && {브라우저}",
     "and_checked": false,
     "or_checked": true
   }
