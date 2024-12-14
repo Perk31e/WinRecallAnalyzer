@@ -7,7 +7,6 @@ from PySide6.QtGui import QPixmap, QAction
 import sqlite3
 import os
 from datetime import datetime
-from FlowLayout import FlowLayout  # FlowLayout 임포트
 import re
 import json
 

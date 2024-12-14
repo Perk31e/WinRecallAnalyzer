@@ -28,14 +28,16 @@ pip install -r requirements.txt
 
 - [x] Implement All Tab
 - [x] Implement Image Tab
-- [ ] Implement File Tab
-- [ ] Implement Web Tab
 - [ ] Implement App Tab
+  - [ ] Implement Prefetch Analysis
+  - [ ] Implement Lnk Analysis
+  - [ ] Implement Jumplist Analysis
+  - [ ] Implement SRUM Analysis
+- [ ] Implement Web Tab
+- [ ] Implement File Tab
 - [ ] Implement Recovery Tab
 - [ ] Implement InternalAudit Tab
-- [ ] Add SRUM Analysis
-- [ ] Add Prefetch Analysis
-- [ ] Modify Qss Design
+- [x] Modify Qss Design
 - [x] Add Initial Recovery Results
 - [ ] Convert .py to .exe binary file
 
