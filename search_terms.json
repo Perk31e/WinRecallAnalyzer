@@ -93,8 +93,8 @@
   {
     "enabled": false,
     "name": "시크릿 탭",
-    "term": "(%Web% == "N/A") && {브라우저}",
+    "term": "(%Web% == \"N/A\") && {브라우저}",
     "and_checked": false,
     "or_checked": true
-  }
+  }  
 ]

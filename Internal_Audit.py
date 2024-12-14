@@ -201,6 +201,39 @@ class InternalAuditWidget(QWidget):
         has_braces = bool(re.search(r'\{([^}]+)\}', original_keyword))
 
         processed_keyword = original_keyword
+        processed_keyword = processed_keyword.replace('\\"', '"')
+
+        name_to_term = {}
+
+        # {} 패턴 있으면 search_terms.json 로드
+        has_braces = bool(re.search(r'\{([^}]+)\}', processed_keyword))
+        if has_braces and os.path.exists('search_terms.json'):
+            try:
+                with open('search_terms.json', 'r', encoding='utf-8') as f:
+                    saved_terms = json.load(f)
+                    for t in saved_terms:
+                        if 'name' in t and 'term' in t:
+                            fixed_term = t['term'].replace('\\"', '"')
+                            name_to_term[t['name']] = fixed_term
+            except Exception as e:
+                print(f"[Internal Audit] search_terms.json 로드 오류: {e}")
+
+        # 중괄호 치환 로직을 while문으로 감쌀 것
+        while True:
+            has_braces = bool(re.search(r'\{([^}]+)\}', processed_keyword))
+            if not has_braces:
+                break
+            
+            def replace_braces(match):
+                key = match.group(1).strip()
+                if key in name_to_term:
+                    return f"({name_to_term[key]})"
+                else:
+                    return match.group(0)
+            
+            processed_keyword = re.sub(r'\{([^}]+)\}', replace_braces, processed_keyword)
+            
+        print("[Debug] processed_keyword =", processed_keyword)
         name_to_term = {}
 
         # {}가 있을 때만 search_terms.json 로드
@@ -211,9 +244,13 @@ class InternalAuditWidget(QWidget):
                     # saved_terms: [{'enabled': bool, 'name': str, 'term': str, ...}, ...]
                     for t in saved_terms:
                         if 'name' in t and 'term' in t:
-                            name_to_term[t['name']] = t['term']
+                            # 여기서 이스케이프를 복원
+                            fixed_term = t['term'].replace('\\"', '"')
+                            print("[Debug] fixed_term =", fixed_term)
+                            name_to_term[t['name']] = fixed_term
             except Exception as e:
                 print(f"[Internal Audit] search_terms.json 로드 오류: {e}")
+        print("[Debug] 최종 processed_keyword =", processed_keyword)
 
         # {}가 있을 때만 {} 패턴을 실제 검색어로 변환
         if has_braces:
