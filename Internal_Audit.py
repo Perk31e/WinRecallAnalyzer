@@ -11,6 +11,26 @@ from FlowLayout import FlowLayout  # FlowLayout 임포트
 import re
 import json
 
+def replace_placeholders_recursive(text, name_to_term):
+    """
+    재귀(반복)적으로 {placeholder}를 치환하여
+    더 이상 치환할 부분이 없을 때 최종 문자열을 반환
+    """
+    pattern = r'\{([^}]+)\}'
+    
+    while True:
+        # re.sub에서 lambda로 매칭된 키를 체크하고, 있으면 치환, 없으면 그대로 둔다.
+        new_text = re.sub(pattern, lambda m: f"({name_to_term[m.group(1).strip()]})" 
+                            if m.group(1).strip() in name_to_term 
+                            else m.group(0), text)
+        
+        if new_text == text:
+            # 더 이상 치환되지 않았으면 break
+            break
+        text = new_text
+    
+    return text
+
 class InternalAuditWidget(QWidget):
     def __init__(self):
         super().__init__()
@@ -208,6 +228,7 @@ class InternalAuditWidget(QWidget):
             try:
                 with open('search_terms.json', 'r', encoding='utf-8') as f:
                     saved_terms = json.load(f)
+                    print(f"[DEBUG] Loaded search_terms: {saved_terms}")
                     # saved_terms: [{'enabled': bool, 'name': str, 'term': str, ...}, ...]
                     for t in saved_terms:
                         if 'name' in t and 'term' in t:
@@ -217,22 +238,10 @@ class InternalAuditWidget(QWidget):
 
         # {}가 있을 때만 {} 패턴을 실제 검색어로 변환
         if has_braces:
-            def replace_braces(match):
-                key = match.group(1).strip()
-                if key in name_to_term:
-                    # 실제 검색어를 ()로 감싸기
-                    return f"({name_to_term[key]})"
-                else:
-                    # 해당 검색어명이 search_terms.json에 없으면 그대로 둔다.
-                    return match.group(0)
-
-            processed_keyword = original_keyword
-            while True:
-                new_keyword = re.sub(r'\{([^}]+)\}', replace_braces, processed_keyword)
-                if new_keyword == processed_keyword:
-                    break  # 더 이상 치환할 중괄호가 없으니 중단
-                processed_keyword = new_keyword
+            # 재귀적으로(반복적으로) {...} 패턴을 치환
+            processed_keyword = replace_placeholders_recursive(original_keyword, name_to_term)
         
+        print(f"[DEBUG] Final processed_keyword after braces replacement: '{processed_keyword}'")
         keyword = processed_keyword  # 이후 로직은 processed_keyword를 사용하여 검색
 
         try:
@@ -744,28 +753,25 @@ class InternalAuditWidget(QWidget):
             # {}가 있을 때만 실제 검색어로 변환
             processed_search = original_search
             if has_braces:
-                def replace_braces(match):
-                    key = match.group(1).strip()
-                    if key in name_to_term:
-                        # 실제 검색어를 ()로 감싸기. 예: (jpg || jpeg || png ...)
-                        return f"({name_to_term[key]})"
-                    else:
-                        return match.group(0)
+                processed_search = replace_placeholders_recursive(original_search, name_to_term)
 
-                processed_search = re.sub(r'\{([^}]+)\}', replace_braces, processed_search)
-
+            print(f"[DEBUG][show_ocr_content] 최종 processed_search: '{processed_search}'")
             # 실제 하이라이트할 검색어들 추출
             def extract_search_terms(search_str):
                 # 연산자와 괄호를 개행으로 치환
+                print(f"[DEBUG][extract_search_terms] raw search_str = '{search_str}'")
                 temp = re.sub(r'(\|\||&&|==|\(|\))', '\n', search_str)
                 # 개행 기준으로 split
                 lines = [line.strip() for line in temp.split('\n') if line.strip()]
+                print(f"[DEBUG][extract_search_terms] parsedlines = {lines}")
                 return lines
 
             highlight_terms = extract_search_terms(processed_search)
-
+            print(f"[DEBUG][show_ocr_content] highlight_terms = {highlight_terms}")
             # 검색어 표시용 함수
             def highlight_search_display(search_str, terms):
+                print(f"[DEBUG][highlight_search_display] Called with search_str='{search_str}'")
+                print(f"[DEBUG][highlight_search_display] highlight_terms={terms}")
                 # 여기서 {} 안의 단어는 나중에 처리하므로 지금은 단어 강조만 처리
                 display = search_str
                 # term 강조 (파란색 굵게) - 하지만 {} 내는 나중에 처리
@@ -853,6 +859,8 @@ class InternalAuditWidget(QWidget):
             conn.close()
 
             def highlight_text(text, terms):
+                print(f"[DEBUG][highlight_text] text[:100] = '{text[:100] if text else ''}...'") 
+                print(f"[DEBUG][highlight_text] highlight_terms = {terms}")
                 if not text:
                     return 'N/A'
                 highlighted = text
