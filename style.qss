@@ -17,31 +17,30 @@ QMainWindow {
 /* ---------- QMenuBar ---------- */
 /* 파일, 파일 선택 란에 대한 디자인 */
 QMenuBar {
-    background-color: #ffffff;
     color: #1d1d1f;
-    border-bottom: 1px solid #d1d1d6;
+    border-bottom: none;  /* 하단 테두리 제거 */
     padding: 4px 10px;
 }
 QMenuBar::item {
     background-color: transparent;
     color: #007AFF;  /* Toss Blue */
     padding: 6px 12px;
+    border-radius: 5px;  /* 둥근 모서리 추가 */
 }
-QMenuBar::item:selected {
-    background-color: #007AFF;  /* Highlighted Blue */
+QMenuBar::item:selected,
+QMenuBar::item:pressed {
+    background-color: #007AFF;
     color: #ffffff;
-    border-radius: 5px;
-    outline: none;
 }
+
 /* ------------------------------ */
-/* ---------- QMenu::item (Menu Item) ---------- */
+/* ---------- QMenu ---------- */
 /* 파일 버튼 누르면 뜨는 '파일 선택' 에 대한 디자인 사항들*/
 QMenu {
-    background-color: #ffffff; /* White background */
+    background-color: #f7f8fa;  /* 메뉴 배경색을 메인 배경색과 동일하게 설정 */
     border: 1px solid #c1c1c6; /* Light border */
-    border-bottom: 1px solid #d1d1d6;
-    border-radius: 5px; /* Rounded corners for menu */
-    padding: 4px 10px; /* Padding around the menu */
+    border-radius: 5px;
+    padding: 4px 0px;
 }
 
 QMenu::item {
