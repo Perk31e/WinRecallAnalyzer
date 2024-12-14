@@ -1,6 +1,6 @@
 # recovery_table.py
 
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QTableView, QLabel
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QTableView, QLabel, QHeaderView
 from PySide6.QtCore import Qt, QThread, Signal
 from database import SQLiteTableModel, load_recovery_data_from_db
 from no_focus_frame_style import NoFocusFrameStyle
@@ -71,9 +71,13 @@ class RecoveryTableWidget(QWidget):
 
         # QTableView 설정
         self.table_view = QTableView()
-        # NoFocusFrameStyle 적용 (필요 시 사용)
         self.table_view.setStyle(NoFocusFrameStyle())
         self.table_view.setSortingEnabled(True)
+        
+        # 테이블 크기 정책 설정
+        header = self.table_view.horizontalHeader()
+        header.setStretchLastSection(False)
+        
         layout.addWidget(self.table_view)
 
         # 정보 메시지 레이블 추가
@@ -377,6 +381,19 @@ class RecoveryTableWidget(QWidget):
                 # SQLiteTableModel에 데이터와 헤더 전달
                 model = SQLiteTableModel(data, headers)
                 self.table_view.setModel(model)
+                
+                # 모델이 설정된 후 칼럼 크기 조정
+                header = self.table_view.horizontalHeader()
+                
+                # Id, Name, AppName, TimeStamp는 내용에 맞게 자동 조절
+                header.setSectionResizeMode(0, QHeaderView.ResizeToContents)  # Id
+                header.setSectionResizeMode(1, QHeaderView.ResizeToContents)  # Name
+                header.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # AppName
+                header.setSectionResizeMode(4, QHeaderView.ResizeToContents)  # TimeStamp
+                
+                # WindowTitle만 고정 너비로 설정
+                header.setSectionResizeMode(2, QHeaderView.Fixed)
+                self.table_view.setColumnWidth(2, 500)
                 
                 # 레코드 수 확인
                 print(f"\n데이터베이스 경로: {self.recovered_db_path}")
