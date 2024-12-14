@@ -1044,13 +1044,13 @@ class AdvancedSearchDialog(QDialog):
             # 검색어명 입력
             name_edit = QLineEdit()
             name_edit.setPlaceholderText(f"검색어명{i+1}")
-            name_edit.setFixedWidth(100)
+            name_edit.setFixedWidth(200)
             entry_layout.addWidget(name_edit)
             
             # 검색어 입력
             term_edit = QLineEdit()
             term_edit.setPlaceholderText("검색어를 입력하세요")
-            term_edit.setFixedWidth(400)
+            term_edit.setFixedWidth(350)
             entry_layout.addWidget(term_edit)
             
             # AND/OR 체크박스
@@ -1121,13 +1121,13 @@ class AdvancedSearchDialog(QDialog):
         # 검색어명 입력
         name_edit = QLineEdit()
         name_edit.setPlaceholderText(f"검색어명{len(self.search_entries)+1}")
-        name_edit.setFixedWidth(100)
+        name_edit.setFixedWidth(200)
         entry_layout.addWidget(name_edit)
         
         # 검색어 입력
         term_edit = QLineEdit()
         term_edit.setPlaceholderText("검색어를 입력하세요")
-        term_edit.setFixedWidth(400)  # 기존 입력란과 동일한 너비로 고정
+        term_edit.setFixedWidth(350)  # 기존 입력란과 동일한 너비로 고정
         entry_layout.addWidget(term_edit)
         
         # AND/OR 체크박스
