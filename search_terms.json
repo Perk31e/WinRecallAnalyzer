@@ -72,7 +72,7 @@
   {
     "enabled": false,
     "name": "화면 캡처 및 기록",
-    "term": "화면 캡처 || 스크린샷 || snipping tool || screenshot || recording || 녹화",
+    "term": "화면 캡처 || capture ||스크린샷 || snipping tool || screenshot || recording || 녹화",
     "and_checked": false,
     "or_checked": false
   },
@@ -86,7 +86,7 @@
   {
     "enabled": false,
     "name": "내부 자료",
-    "term": "(confidential || restricted || secret || internal || 기밀 || 보안 || 내부 || proposal || plan || report || client || employee || cr || proj_ || project || prj || 프로젝트) && ({문서 파일} || {압축 파일} || {코드/개발 파일} || {CAD/3D 파일} || {기타 파일} || {이미지 파일} || {오디오 파일} || {비디오 파일})",
+    "term": "(confidential || 기밀 || restricted || 제한 || secret || 시크릿 || 비밀 || internal || 내부 || 보안 || 내부 || proposal || plan || 플랜 || report || 리포트 || client || 클라이언트 || employee || 직원 || cr || proj_ || project || prj || 프로젝트) && ({문서 파일} || {압축 파일} || {코드/개발 파일} || {CAD/3D 파일} || {기타 파일} || {이미지 파일} || {오디오 파일} || {비디오 파일})",
     "and_checked": false,
     "or_checked": true
   },
@@ -177,7 +177,7 @@
   {
     "enabled": false,
     "name": "자료 송수신",
-    "term": "upload || 업로드 || 저장 || save || download || 다운로드 || 저장 중 || save as || 파일 저장 || 다운 받기 || 다른 이름으로 저장",
+    "term": "upload || 업로드 || save as || 다른 이름으로 저장 || download || 다운로드 || 다운 받기 || saving ||저장 중 || save || 저장 || 파일 저장 ",
     "and_checked": false,
     "or_checked": true
   }
