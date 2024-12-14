@@ -11,43 +11,6 @@ from FlowLayout import FlowLayout  # FlowLayout 임포트
 import re
 import json
 
-def replace_braces_once(keyword, name_to_term):
-    def replace_func(match):
-        brace_key = match.group(1).strip()
-        if brace_key in name_to_term:
-            return f"({name_to_term[brace_key]})"
-        else:
-            return match.group(0)
-    return re.sub(r'\{([^}]+)\}', replace_func, keyword)
-
-def process_braces(keyword):
-    has_braces = bool(re.search(r'\{([^}]+)\}', keyword))
-    if not has_braces:
-        return keyword
-
-    # 한 번만 JSON 로드
-    name_to_term = {}
-    if os.path.exists('search_terms.json'):
-        try:
-            with open('search_terms.json', 'r', encoding='utf-8') as f:
-                saved_terms = json.load(f)
-            name_to_term = {
-                t['name']: t['term'].replace('\\"', '"')
-                for t in saved_terms if 'name' in t and 'term' in t
-            }
-        except Exception as e:
-            print(f"[Error] Cannot load search_terms.json: {e}")
-            return keyword
-    
-    processed = keyword
-    max_iterations = 10  # 중첩 치환 방지용
-    for _ in range(max_iterations):
-        new_processed = replace_braces_once(processed, name_to_term)
-        if new_processed == processed:
-            break
-        processed = new_processed
-    return processed
-
 class InternalAuditWidget(QWidget):
     def __init__(self):
         super().__init__()
@@ -81,11 +44,11 @@ class InternalAuditWidget(QWidget):
                                 "Single Search: 검색어\n"
                                 "AND Search: 검색어1 && 검색어2\n"
                                 "OR Search: 검색어1 || 검색어2\n"
-                                "Window Title: %Title% == \"검색어\"\n"
-                                "App Name: %App% == \"검색어\"\n"
-                                "Web URL: %Web% == \"검색어\"\n"
-                                "File Path: %File% == \"검색어\"\n"
-                                "OCR Text: %OCR% == \"검색어\""
+                                "Window Title: %Title% == 검색어\n"
+                                "App Name: %App% == 검색어\n"
+                                "Web URL: %Web% == 검색어\n"
+                                "File Path: %File% == 검색어\n"
+                                "OCR Text: %OCR% == 검색어"
                                 )
 
         search_label.setFixedWidth(50)
@@ -97,11 +60,11 @@ class InternalAuditWidget(QWidget):
                                     "Single Search: 검색어\n"
                                     "AND Search: 검색어1 && 검색어2\n"
                                     "OR Search: 검색어1 || 검색어2\n"
-                                    "Window Title: %Title% == \"검색어\"\n"
-                                    "App Name: %App% == \"검색어\"\n"
-                                    "Web URL: %Web% == \"검색어\"\n"
-                                    "File Path: %File% == \"검색어\"\n"
-                                    "OCR Text: %OCR% == \"검색어\""
+                                    "Window Title: %Title% == 검색어\n"
+                                    "App Name: %App% == 검색어\n"
+                                    "Web URL: %Web% == 검색어\n"
+                                    "File Path: %File% == 검색어\n"
+                                    "OCR Text: %OCR% == 검색어"
                                     )
 
         self.keyword_search.setFixedWidth(250)
@@ -234,12 +197,46 @@ class InternalAuditWidget(QWidget):
             print("[Internal Audit] DB 경로가 설정되지 않았습니다.")
             return
 
-        # --- (1) 중괄호 치환 함수 호출 ---
-        processed_keyword = process_braces(original_keyword)
-        print("[Debug] 최종 processed_keyword =", processed_keyword)
+        # {} 패턴 여부 확인
+        has_braces = bool(re.search(r'\{([^}]+)\}', original_keyword))
+
+        processed_keyword = original_keyword
+        name_to_term = {}
+
+        # {}가 있을 때만 search_terms.json 로드
+        if has_braces and os.path.exists('search_terms.json'):
+            try:
+                with open('search_terms.json', 'r', encoding='utf-8') as f:
+                    saved_terms = json.load(f)
+                    # saved_terms: [{'enabled': bool, 'name': str, 'term': str, ...}, ...]
+                    for t in saved_terms:
+                        if 'name' in t and 'term' in t:
+                            name_to_term[t['name']] = t['term']
+            except Exception as e:
+                print(f"[Internal Audit] search_terms.json 로드 오류: {e}")
+
+        # {}가 있을 때만 {} 패턴을 실제 검색어로 변환
+        if has_braces:
+            def replace_braces(match):
+                key = match.group(1).strip()
+                if key in name_to_term:
+                    # 실제 검색어를 ()로 감싸기
+                    return f"({name_to_term[key]})"
+                else:
+                    # 해당 검색어명이 search_terms.json에 없으면 그대로 둔다.
+                    return match.group(0)
+
+            processed_keyword = original_keyword
+            while True:
+                new_keyword = re.sub(r'\{([^}]+)\}', replace_braces, processed_keyword)
+                if new_keyword == processed_keyword:
+                    break  # 더 이상 치환할 중괄호가 없으니 중단
+                processed_keyword = new_keyword
+        
+        keyword = processed_keyword  # 이후 로직은 processed_keyword를 사용하여 검색
 
         try:
-            print(f"[Internal Audit] 검색 시작 - 키워드: {processed_keyword}")
+            print(f"[Internal Audit] 검색 시작 - 키워드: {keyword}")
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
@@ -248,52 +245,51 @@ class InternalAuditWidget(QWidget):
 
             # == 연산자를 사용한 검색 패턴
             field_patterns = {
-                r'%Title%\s*==\s*"([^"]*)"': ('wc.WindowTitle LIKE ?', 'wc.WindowTitle IS NULL'),
-                r'%App%\s*==\s*"([^"]*)"': ('a.Name LIKE ?', 'a.Name IS NULL'),
-                r'%Web%\s*==\s*"([^"]*)"': ('w.Uri LIKE ?', 'w.Uri IS NULL'),
-                r'%File%\s*==\s*"([^"]*)"': ('f.Path LIKE ?', 'f.Path IS NULL'),
-                r'%OCR%\s*==\s*"([^"]*)"': ('wctc.c2 LIKE ?', 'wctc.c2 IS NULL')
+                # 따옴표 없이 (\S+): 공백이 없는 문자열 매칭
+                r'%Web%\s*==\s*([^\s()]+)': ('w.Uri LIKE ?', 'w.Uri IS NULL'),
+                r'%Title%\s*==\s*([^\s()]+)': ('wc.WindowTitle LIKE ?', 'wc.WindowTitle IS NULL'),
+                r'%App%\s*==\s*([^\s()]+)': ('a.Name LIKE ?', 'a.Name IS NULL'),
+                r'%File%\s*==\s*([^\s()]+)': ('f.Path LIKE ?', 'f.Path IS NULL'),
+                r'%OCR%\s*==\s*([^\s()]+)': ('wctc.c2 LIKE ?', 'wctc.c2 IS NULL'),
             }
 
-            # 검색어 파싱 전, 우선 remaining_text 설정
-            remaining_text = processed_keyword
-            
-            # (2) "%Title% == \"검색어\"" 등 패턴 먼저 매칭
+            # 검색어 파싱
+            remaining_text = keyword
             for pattern, (like_condition, null_condition) in field_patterns.items():
                 matches = re.finditer(pattern, remaining_text)
                 for match in matches:
-                    search_term = match.group(1)
+                    search_term = match.group(1)  # (\S+) 캡처
                     if search_term.lower() == "n/a":
-                        conditions.append(null_condition)
+                        conditions.append(null_condition)  # 예: w.Uri IS NULL
                     else:
-                        conditions.append(like_condition)
+                        conditions.append(like_condition)  # 예: w.Uri LIKE ?
                         params.append(f"%{search_term}%")
-                    # 이미 매칭된 부분은 remaining_text에서 제거
                     remaining_text = remaining_text.replace(match.group(0), "")
 
-            # (3) 일반 검색어 처리 (remaining_text)
+
+            # 일반 검색어 처리 (남은 텍스트에서)
             remaining_text = remaining_text.strip()
-            
             if remaining_text:
-                # 기존 AND/OR 파서 사용
+                # AND/OR 검색 처리
                 def parse_expression(expression, patterns, param_list):
                     # 토큰화
                     tokens = re.split(r'(\s+\|\|\s+|\s+&&\s+|\(|\))', expression)
                     tokens = [token.strip() for token in tokens if token.strip()]
                     
-                    conditions_stack = []
+                    # 조건 스택
+                    conditions = []
                     operators = []
                     
                     def apply_operator():
-                        if len(conditions_stack) < 2:
+                        if len(conditions) < 2:
                             return
-                        right = conditions_stack.pop()
-                        left = conditions_stack.pop()
+                        right = conditions.pop()
+                        left = conditions.pop()
                         operator = operators.pop()
                         if operator == '||':
-                            conditions_stack.append(f"({left} OR {right})")
+                            conditions.append(f"({left} OR {right})")
                         else:  # AND
-                            conditions_stack.append(f"({left} AND {right})")
+                            conditions.append(f"({left} AND {right})")
                     
                     for token in tokens:
                         if token == '(':
@@ -301,47 +297,49 @@ class InternalAuditWidget(QWidget):
                         elif token == ')':
                             while operators and operators[-1] != '(':
                                 apply_operator()
-                            if operators and operators[-1] == '(':
+                            if operators:
                                 operators.pop()  # '(' 제거
                         elif token in ['&&', '||']:
-                            # AND/OR
                             while operators and operators[-1] not in ['(']:
                                 apply_operator()
-                            # '||' -> OR, '&&' -> AND
                             operators.append('||' if token == '||' else 'AND')
                         else:
-                            # 필드별 검색 패턴 우선체크
+                            # 필드별 검색 패턴 확인
                             field_match = False
-                            for pat, (like_condition, null_condition) in patterns.items():
-                                if re.match(pat, token):
-                                    match = re.match(pat, token)
+                            for pattern, (like_condition, null_condition) in patterns.items():
+                                if re.match(pattern, token):
+                                    match = re.match(pattern, token)
                                     search_term = match.group(1)
                                     if search_term.lower() == "n/a":
-                                        conditions_stack.append(null_condition)
+                                        conditions.append(null_condition)
                                     else:
-                                        conditions_stack.append(like_condition)
+                                        conditions.append(like_condition)
                                         param_list.append(f"%{search_term}%")
                                     field_match = True
                                     break
-                            # 일반 검색어 (WindowTitle/ App / OCR 내 검색)
+                            
+                            # 일반 검색어 처리
                             if not field_match:
-                                conditions_stack.append(f"""
+                                conditions.append(f"""
                     (wc.WindowTitle LIKE ? OR
-                    a.Name LIKE ? OR
-                    wctc.c2 LIKE ?)
+                     a.Name LIKE ? OR
+                     wctc.c2 LIKE ?)
                 """)
                                 param_list.extend([f"%{token}%" for _ in range(3)])
                     
                     while operators:
                         apply_operator()
                     
-                    return conditions_stack[0] if conditions_stack else ""
-                
+                    return conditions[0] if conditions else ""
+
+            # 일반 검색어 처리 (남은 텍스트에서)
+            remaining_text = keyword.strip()
+            if remaining_text:
                 condition = parse_expression(remaining_text, field_patterns, params)
                 if condition:
                     conditions.append(condition)
 
-            # (4) 최종 WHERE
+            # 최종 쿼리 생성
             where_clause = " AND ".join(f"({cond})" for cond in conditions) if conditions else "1=1"
             
             query = f"""
@@ -396,7 +394,6 @@ class InternalAuditWidget(QWidget):
         except sqlite3.Error as e:
             print(f"[Internal Audit] 데이터베이스 오류: {e}")
             self.lower_text_box.setText(f"데이터베이스 오류: {e}")
-
 
     def display_images(self, results):
         self.clear_images()
@@ -1001,8 +998,6 @@ class InternalAuditWidget(QWidget):
         # 현재 클릭한 이미지 정보 저장
         self.current_selected_box = clicked_box
         self.show_ocr_content(timestamp)
-    
-
 
 class AdvancedSearchDialog(QDialog):
     def __init__(self, parent=None):

@@ -119,17 +119,17 @@
     "or_checked": false
   },
   {
-    "enabled": true,
+    "enabled": false,
     "name": "기밀 문서 유출",
     "term": "({문서 파일} || {압축 파일} || {코드/개발 파일} || {CAD/3D 파일} || {기타 파일} || {이미지 파일} || {오디오 파일} || {비디오 파일}) && {파일 상호작용}",
     "and_checked": false,
     "or_checked": false
   },
   {
-    "enabled": false,
+    "enabled": true,
     "name": "시크릿 탭",
-    "term": "(%Web% == \"N/A\") && {브라우저} && {파일 상호작용}",
+    "term": "(%Web% == N/A) && {브라우저}",
     "and_checked": false,
     "or_checked": true
-  }  
+  }
 ]
