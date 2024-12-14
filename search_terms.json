@@ -128,7 +128,7 @@
   {
     "enabled": false,
     "name": "파일 상호작용",
-    "term": "{upload || 업로드 || 저장 || save || download || 다운로드 || 저장 중 || save as || 파일 저장 || 다운 받기 || 다른 이름으로 저장}",
+    "term": "upload || 업로드 || 저장 || save || download || 다운로드 || 저장 중 || save as || 파일 저장 || 다운 받기 || 다른 이름으로 저장",
     "and_checked": false,
     "or_checked": true
   }
