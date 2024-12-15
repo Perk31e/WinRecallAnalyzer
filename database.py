@@ -4,6 +4,7 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from PySide6.QtCore import Qt, QAbstractTableModel
 import os
+from decimal import Decimal
 
 
 class SQLiteTableModel(QAbstractTableModel):
@@ -93,50 +94,76 @@ def load_data_from_db(db_path):
 
 def load_app_data_from_db(db_path):
     """
-    App 테이블과 AppDwellTime, WindowCapture 테이블에서 필요한 데이터를 조인하여 중복을 줄이고 데이터를 반환합니다.
+    App, WindowCaptureAppRelation, WindowCapture, 그리고 AppDwellTime 테이블을 조인하여
+    ID, WindowsAppID, PATH, HourStartTimeStamp, DwellTime, TimeStamp를 반환합니다.
+    DwellTime은 초 단위로 변환하며, 소수점 이하를 정확히 유지합니다.
     """
+    def is_within_time_range(ts1, ts2):
+        """
+        두 초 단위 KST 타임스탬프가 ±1초 이내인지 확인합니다.
+        """
+        return abs(ts1 - ts2) <= 1
+
     try:
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
 
-        # SQL 쿼리: WindowsAppID는 가져오고, Name 칼럼은 제외
+        # SQL 쿼리
         query = """
+        WITH FilteredTime AS (
+            SELECT 
+                wc.Id AS WindowCaptureId,
+                wcar.AppId AS AppId,
+                CAST(wc.TimeStamp / 1000 AS INTEGER) AS TimeStampSeconds -- 초 단위 변환
+            FROM WindowCapture wc
+            JOIN WindowCaptureAppRelation wcar ON wc.Id = wcar.WindowCaptureId
+        ),
+        FilteredDwellTime AS (
+            SELECT 
+                WindowsAppID,
+                CAST(HourStartTimeStamp / 1000 AS INTEGER) AS HourStartTimeStampSeconds, -- 초 단위 변환
+                DwellTime,
+                ROW_NUMBER() OVER (PARTITION BY WindowsAppID, HourStartTimeStamp ORDER BY HourStartTimeStamp) AS RowNum
+            FROM AppDwellTime
+        )
         SELECT 
-            app.ID,
+            app.ID AS AppID,
             app.WindowsAppID,
-            app.PATH,          -- App 경로
-            adt.HourStartTimeStamp,
-            adt.DwellTime,     -- 앱 사용 시간 (밀리초 단위)
-            wc.TimeStamp       -- 마지막 WindowCapture 타임스탬프
-        FROM App app
-        LEFT JOIN AppDwellTime adt ON app.WindowsAppID = adt.WindowsAppID
-        LEFT JOIN (
-            SELECT WindowCaptureAppRelation.AppId, MAX(WindowCapture.TimeStamp) as TimeStamp
-            FROM WindowCapture
-            JOIN WindowCaptureAppRelation ON WindowCapture.Id = WindowCaptureAppRelation.WindowCaptureId
-            GROUP BY WindowCaptureAppRelation.AppId
-        ) wc ON wc.AppId = app.ID
-        ORDER BY app.ID;
+            app.PATH,
+            adt.HourStartTimeStampSeconds AS HourStartTimeStamp,
+            CASE 
+                WHEN ABS(ft.TimeStampSeconds - adt.HourStartTimeStampSeconds) <= 1 THEN adt.DwellTime
+                ELSE NULL
+            END AS DwellTime,
+            ft.TimeStampSeconds AS TimeStamp
+        FROM FilteredTime ft
+        JOIN App app ON ft.AppId = app.ID
+        LEFT JOIN FilteredDwellTime adt 
+            ON app.WindowsAppID = adt.WindowsAppID 
+           AND ABS(ft.TimeStampSeconds - adt.HourStartTimeStampSeconds) <= 1
+           AND adt.RowNum = 1
+        WHERE adt.HourStartTimeStampSeconds IS NOT NULL -- HourStartTimeStamp가 NULL인 행 제거
+        ORDER BY app.ID, ft.TimeStampSeconds;
         """
         cursor.execute(query)
         data = cursor.fetchall()
 
-        # 열 이름 가져오기 (Name 칼럼 제외)
+        # 열 이름 가져오기
         headers = [description[0] for description in cursor.description]
 
         # 시간 변환 처리
         converted_data = []
         for row in data:
             row = list(row)
-            # HourStartTimeStamp 변환
+            # HourStartTimeStamp KST 변환
             if row[3]:
-                row[3] = convert_unix_timestamp(row[3])
-            # DwellTime 변환
+                row[3] = convert_unix_timestamp(row[3] * 1000)  # 초 단위를 다시 밀리초로 변환 후 KST
+            # DwellTime 변환 (밀리초 -> 초, 소수점 유지)
             if row[4]:
-                row[4] = round(row[4] / 1000, 2)  # 밀리초 -> 초 단위 변환
-            # TimeStamp 변환
+                row[4] = "{:.3f}".format(Decimal(row[4]) / 1000)  # Decimal로 정밀 변환
+            # TimeStamp KST 변환
             if row[5]:
-                row[5] = convert_unix_timestamp(row[5])
+                row[5] = convert_unix_timestamp(row[5] * 1000)  # 초 단위를 다시 밀리초로 변환 후 KST
             converted_data.append(row)
 
         return converted_data, headers
@@ -145,6 +172,7 @@ def load_app_data_from_db(db_path):
         return None, None
     finally:
         conn.close()
+
 
 def load_web_data(db_path, keywords=None):
     """Web 테이블의 모든 URI는 필터링에 포함되지 않으며, 해당 ID의 WindowTitle과 TimeStamp도 함께 가져옵니다.
@@ -250,6 +278,7 @@ def load_recovery_data_from_db(db_path):
             r.Name, 
             r.WindowTitle,
             COALESCE(a.Name, ' 이름 없음 (' || rel.AppId || ')') as AppName,
+            COALESCE(w.Uri, '') as Uri,
             CASE 
                 WHEN r.TimeStamp IS NOT NULL 
                 THEN datetime(CAST(CAST(r.TimeStamp AS INTEGER) / 1000 AS INTEGER), 'unixepoch', 'localtime') || '.' ||
@@ -258,12 +287,14 @@ def load_recovery_data_from_db(db_path):
         FROM re_WindowCapture r
         LEFT JOIN re_WindowCaptureAppRelation rel ON r.Id = rel.WindowCaptureId
         LEFT JOIN re_App a ON rel.AppId = a.Id
+        LEFT JOIN re_WindowCaptureWebRelation wrel ON r.Id = wrel.WindowCaptureId
+        LEFT JOIN re_Web w ON wrel.WebId = w.Id
         ORDER BY r.Id;
         """
         
         cursor.execute(query)
         data = cursor.fetchall()
-        headers = ["Id", "Name", "WindowTitle", "AppName", "TimeStamp"]
+        headers = ["Id", "Name", "WindowTitle", "AppName", "Uri", "TimeStamp"]
 
         return data, headers
 

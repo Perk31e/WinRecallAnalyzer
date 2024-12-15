@@ -7,10 +7,53 @@ import ctypes
 import time
 from ctypes import wintypes
 import pandas as pd
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QTableView, QLabel, QTextEdit, QSplitter, QHeaderView
-from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QTableView, QLabel, QTextEdit, QSplitter, QHeaderView, QStyledItemDelegate
+from PySide6.QtCore import Qt, QAbstractTableModel
 from database import SQLiteTableModel, load_app_data_from_db
 
+
+class SQLiteTableModel(QAbstractTableModel):
+    def __init__(self, data, headers, parent=None):
+        super().__init__(parent)
+        self._data = data  # 데이터: 리스트 형태로 가정
+        self._headers = headers  # 헤더: 리스트 형태로 가정
+        self._sort_order = Qt.AscendingOrder  # 기본 정렬 순서
+
+    def rowCount(self, parent=None):
+        return len(self._data)
+
+    def columnCount(self, parent=None):
+        return len(self._headers)
+
+    def data(self, index, role=Qt.DisplayRole):
+        if not index.isValid() or role != Qt.DisplayRole:
+            return None
+        return self._data[index.row()][index.column()]
+
+    def headerData(self, section, orientation, role=Qt.DisplayRole):
+        if role != Qt.DisplayRole:
+            return None
+        if orientation == Qt.Horizontal:
+            return self._headers[section]
+        return section + 1
+
+    def sort(self, column, order):
+        """특정 열을 기준으로 데이터 정렬"""
+        if not self._data or column < 0 or column >= len(self._headers):
+            print("정렬할 수 없는 상태입니다.")
+            return
+
+        self.beginResetModel()  # 모델 리셋 시작
+        self._sort_order = order
+
+        # 데이터를 정렬 (오름차순 또는 내림차순)
+        reverse = (order == Qt.DescendingOrder)
+        try:
+            self._data.sort(key=lambda row: row[column], reverse=reverse)
+        except Exception as e:
+            print(f"정렬 중 오류 발생: {e}")
+
+        self.endResetModel()  # 모델 리셋 완료
 
 class AppTableWidget(QWidget):
     def __init__(self, mode='analysis'):
@@ -21,8 +64,6 @@ class AppTableWidget(QWidget):
         self.software_path = None  # 초기화 추가
         self.foreground_cycle_time_data = None
         self.setup_ui()
-
-
 
     def setup_ui(self):
         self.table_view = QTableView(self)
@@ -36,6 +77,8 @@ class AppTableWidget(QWidget):
 
         for text_box in [self.text_box1, self.text_box2, self.text_box3, self.text_box4]:
             text_box.setReadOnly(True)
+
+        self.table_view.setSortingEnabled(True)  # 정렬 기능 활성화
 
         splitter = QSplitter(Qt.Horizontal)
         left_widget = QWidget()
@@ -77,13 +120,27 @@ class AppTableWidget(QWidget):
         if data:
             model = SQLiteTableModel(data, headers)
             self.table_view.setModel(model)
+            self.table_view.hideColumn(0)
             self.table_view.hideColumn(1)
+
             header = self.table_view.horizontalHeader()
-            header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
-            header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
-            header.setSectionResizeMode(5, QHeaderView.ResizeToContents)
-            header.setSectionResizeMode(2, QHeaderView.Interactive)
-            header.resizeSection(2, 340)
+
+            # 열 크기 조정
+            header.setSectionResizeMode(2, QHeaderView.Interactive)  # 3번째 열: 수동 조정 가능
+            header.setSectionResizeMode(3, QHeaderView.Interactive)  # 4번째 열: 수동 조정 가능
+            header.setSectionResizeMode(4, QHeaderView.Interactive)  # 5번째 열: 수동 조정 가능
+            header.resizeSection(2, 440)  # 2번째 열 초기 너비 수동 설정
+            header.resizeSection(3, 150)  # 3번째 열 초기 너비 수동 설정
+            header.resizeSection(4, 75)  # 4번째 열 초기 너비 수동 설정
+
+            self.table_view.resizeColumnToContents(5)  # 6번째 열: 데이터 길이에 맞춤
+
+            # 열 정렬 활성화
+            self.table_view.setSortingEnabled(True)
+
+            # 초기 정렬 (4번 열: HourStartTimeStamp 기준 오름차순)
+            self.table_view.sortByColumn(3, Qt.AscendingOrder)  # 3번째 열을 기준으로 오름차순 정렬
+
             self.info_label.hide()
             selection_model = self.table_view.selectionModel()
             if selection_model:
