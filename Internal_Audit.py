@@ -993,7 +993,7 @@ class InternalAuditWidget(QWidget):
 
         # 현재 클릭한 박스에 파란색 테두리 적용
         clicked_box.setStyleSheet("""
-            border: 2px solid #0078D7;
+            border: 2px solid #007AFF;
             padding: 0px;
             margin: 0px;
             background-color: #ffffff;
