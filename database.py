@@ -108,7 +108,7 @@ def load_app_data_from_db(db_path):
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
 
-        # SQL 쿼리
+        # 수정된 SQL 쿼리
         query = """
         WITH FilteredTime AS (
             SELECT 
@@ -123,26 +123,31 @@ def load_app_data_from_db(db_path):
                 WindowsAppID,
                 CAST(HourStartTimeStamp / 1000 AS INTEGER) AS HourStartTimeStampSeconds, -- 초 단위 변환
                 DwellTime,
-                ROW_NUMBER() OVER (PARTITION BY WindowsAppID, HourStartTimeStamp ORDER BY HourStartTimeStamp) AS RowNum
+                ROW_NUMBER() OVER (
+                    PARTITION BY WindowsAppID, HourStartTimeStamp 
+                    ORDER BY HourStartTimeStamp
+                ) AS RowNum
             FROM AppDwellTime
         )
-        SELECT 
+        SELECT DISTINCT -- 중복 제거
             app.ID AS AppID,
             app.WindowsAppID,
             app.PATH,
-            adt.HourStartTimeStampSeconds AS HourStartTimeStamp,
+            CASE 
+                WHEN ABS(ft.TimeStampSeconds - adt.HourStartTimeStampSeconds) <= 1 THEN adt.HourStartTimeStampSeconds
+                ELSE NULL
+            END AS HourStartTimeStamp, -- 조건에 맞지 않으면 HourStartTimeStamp를 NULL로 처리
             CASE 
                 WHEN ABS(ft.TimeStampSeconds - adt.HourStartTimeStampSeconds) <= 1 THEN adt.DwellTime
                 ELSE NULL
-            END AS DwellTime,
+            END AS DwellTime, -- 조건에 맞지 않으면 DwellTime을 NULL로 처리
             ft.TimeStampSeconds AS TimeStamp
         FROM FilteredTime ft
         JOIN App app ON ft.AppId = app.ID
         LEFT JOIN FilteredDwellTime adt 
             ON app.WindowsAppID = adt.WindowsAppID 
            AND ABS(ft.TimeStampSeconds - adt.HourStartTimeStampSeconds) <= 1
-           AND adt.RowNum = 1
-        WHERE adt.HourStartTimeStampSeconds IS NOT NULL -- HourStartTimeStamp가 NULL인 행 제거
+           AND adt.RowNum = 1 -- 첫 번째 Row만 선택
         ORDER BY app.ID, ft.TimeStampSeconds;
         """
         cursor.execute(query)

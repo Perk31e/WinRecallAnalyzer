@@ -1,6 +1,6 @@
 [
   {
-    "enabled": true,
+    "enabled": false,
     "name": "내부 자료 유출",
     "term": "{내부 자료} && {자료 송수신}",
     "and_checked": true,
@@ -147,7 +147,7 @@
     "or_checked": true
   },
   {
-    "enabled": false,
+    "enabled": true,
     "name": "시크릿 탭",
     "term": "(%Web% == N/A) && {브라우저}",
     "and_checked": false,

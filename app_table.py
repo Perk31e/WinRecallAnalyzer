@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import ctypes
 import time
+import pytz
 from ctypes import wintypes
 import pandas as pd
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QTableView, QLabel, QTextEdit, QSplitter, QHeaderView, QStyledItemDelegate
@@ -139,7 +140,7 @@ class AppTableWidget(QWidget):
             self.table_view.setSortingEnabled(True)
 
             # 초기 정렬 (4번 열: HourStartTimeStamp 기준 오름차순)
-            self.table_view.sortByColumn(3, Qt.AscendingOrder)  # 3번째 열을 기준으로 오름차순 정렬
+            self.table_view.sortByColumn(5, Qt.AscendingOrder)  # 5번째 열을 기준으로 오름차순 정렬
 
             self.info_label.hide()
             selection_model = self.table_view.selectionModel()
@@ -149,17 +150,126 @@ class AppTableWidget(QWidget):
             self.info_label.setText("데이터를 불러올 수 없습니다.")
             self.info_label.show()
 
+    def set_csv_data(self, csv_data):
+        """Main에서 로드된 CSV 데이터를 설정."""
+        if csv_data is None:
+            print("[DEBUG] 전달된 CSV 데이터가 None입니다.")
+            return
+
+        self.csv_data = csv_data
+        print(f"[DEBUG] AppTableWidget에 CSV 데이터가 설정되었습니다. 총 {len(self.csv_data)}개의 행")
+
     def on_table_selection_changed(self, selected, deselected):
         selected_indexes = self.table_view.selectionModel().selectedIndexes()
         if selected_indexes:
             row = selected_indexes[0].row()
             model = self.table_view.model()
             if model:
-                app_data = model.data(model.index(row, 0))
-                self.text_box1.setText(f"선택된 App 데이터: {app_data}")
-                self.text_box2.setText("LNK 관련 데이터 표시 예정")
-                self.text_box3.setText("Jumplist 관련 데이터 표시 예정")
-                self.text_box4.setText("SRUM 데이터는 여기에 표시됩니다.")
+                app_path = model.data(model.index(row, 2))  # Path 열
+                app_time = model.data(model.index(row, 5))  # TimeStamp 열
+                print(f"[DEBUG] 선택된 테이블 데이터 - Path: {app_path}, TimeStamp: {app_time}")
+
+                # SRUM 데이터와 비교
+                if hasattr(self, 'csv_data') and self.csv_data is not None:
+                    srum_data = self.get_srum_related_data(app_path, app_time)
+                    self.text_box4.setText(srum_data)
+                else:
+                    print("[DEBUG] CSV 데이터가 AppTableWidget에 설정되지 않았습니다.")
+                    self.text_box4.setText("CSV 데이터가 없습니다.")
+
+    def convert_foreground_cycle_time_to_seconds(self, foreground_cycle_time):
+        """
+        ForegroundCycleTime 값을 초 단위로 변환합니다.
+        """
+        return foreground_cycle_time / 10_000_000  # 100나노초 단위를 초로 변환
+
+    def format_seconds_to_minutes_and_seconds(self, seconds):
+        """
+        초 단위를 분과 초 형식으로 변환합니다.
+        """
+        minutes = int(seconds // 60)
+        remaining_seconds = int(seconds % 60)
+        return f"{minutes}분 {remaining_seconds}초"
+
+    def get_srum_related_data(self, app_path, app_time):
+        """
+        CSV 데이터와 테이블 데이터를 비교하여 연관된 ForegroundCycleTime 값을 반환.
+        초는 무시하고 분 단위 ±1 범위로 비교.
+        """
+        if not hasattr(self, 'csv_data') or self.csv_data is None:
+            print("[DEBUG] CSV 데이터가 self.csv_data에 없습니다.")
+            return "CSV 데이터가 없습니다."
+
+        try:
+            # 파일명만 추출
+            app_file_name = os.path.basename(app_path)
+            print(f"[DEBUG] 비교를 위한 파일명: {app_file_name}")
+
+            # `ExeInfo`에서 파일명 매칭 후 명시적 복사
+            filtered_data = self.csv_data[
+                self.csv_data["ExeInfo"].str.contains(app_file_name, na=False, case=False)].copy()
+            if filtered_data.empty:
+                print(f"[DEBUG] ExeInfo에 {app_file_name} 관련 데이터가 없습니다.")
+                return "ExeInfo 데이터 없음"
+
+            print(f"[DEBUG] ExeInfo에서 {app_file_name} 관련 데이터 필터링 완료.")
+            print(filtered_data[["ExeInfo", "Timestamp", "ForegroundCycleTime"]].head())
+
+            # 테이블의 TimeStamp를 24시간제로 변환 (초 제거) 및 KST로 설정
+            if app_time:
+                app_time_24h = pd.to_datetime(app_time, format='%Y-%m-%d %H:%M:%S').floor('min')
+                kst_zone = pytz.timezone("Asia/Seoul")
+                app_time_24h = kst_zone.localize(app_time_24h)  # KST로 타임존 설정
+                print(f"[DEBUG] 테이블에서 변환된 TimeStamp (분 단위, KST): {app_time_24h}")
+
+            # SRUM 데이터의 Timestamp를 KST로 변환 후 분 단위로 변환
+            filtered_data["Timestamp_KST"] = pd.to_datetime(
+                filtered_data["Timestamp"], format='%Y-%m-%d %H:%M:%S', utc=True
+            ).dt.tz_convert("Asia/Seoul").dt.floor('min')  # 초 제거, 분 단위로 변환
+
+            print(f"[DEBUG] 변환된 CSV 데이터 (분 단위):")
+            print(filtered_data[["ExeInfo", "Timestamp_KST"]].head())
+
+            # ±1분 범위로 Timestamp 비교
+            matched_rows = filtered_data[
+                abs((filtered_data["Timestamp_KST"] - app_time_24h).dt.total_seconds()) <= 60
+                ]
+
+            if not matched_rows.empty:
+                foreground_cycle_time_raw = matched_rows["ForegroundCycleTime"].iloc[0]
+                foreground_cycle_time_seconds = self.convert_foreground_cycle_time_to_seconds(foreground_cycle_time_raw)
+                formatted_time = self.format_seconds_to_minutes_and_seconds(foreground_cycle_time_seconds)
+                print(f"[DEBUG] 매칭된 ForegroundCycleTime (원본): {foreground_cycle_time_raw}")
+                print(f"[DEBUG] 매칭된 ForegroundCycleTime (초 단위): {foreground_cycle_time_seconds}")
+                print(f"[DEBUG] 매칭된 ForegroundCycleTime (포맷): {formatted_time}")
+                return f"ForegroundCycleTime: {formatted_time}"
+            else:
+                print("[DEBUG] 일치하는 CSV 데이터가 없습니다.")
+                return "연관된 ForegroundCycleTime 데이터 없음"
+
+        except Exception as e:
+            print(f"[DEBUG] 데이터 처리 중 오류 발생: {e}")
+            return f"데이터 처리 중 오류 발생: {e}"
+
+    def is_time_within_range(self, target_time, reference_time):
+        """
+        두 시간 간 차이가 ±1분 이내인지 확인 (초 무시).
+        target_time: CSV 데이터의 TimeStamp (24시간제)
+        reference_time: 테이블의 TimeStamp (24시간제)
+        """
+        # 시간 형식을 분 단위로 변환
+        target = pd.to_datetime(target_time, format='%Y-%m-%d %H:%M:%S').floor('min')
+        reference = pd.to_datetime(reference_time, format='%Y-%m-%d %H:%M:%S').floor('min')
+
+        # 분 단위 차이 계산
+        delta = abs((target - reference).total_seconds()) / 60  # 분 단위 차이
+        return delta <= 1  # ±1분 조건
+
+    def set_srum_paths(self, srudb_path, software_path):
+        """SRUM 데이터 경로 설정"""
+        self.srudb_path = srudb_path
+        self.software_path = software_path
+        print(f"[DEBUG] AppTableWidget에 SRUM 경로가 설정되었습니다: SRUDB.dat={srudb_path}, SOFTWARE={software_path}")
 
     def copy_srum_files_and_backup(self, destination_folder):
         """SRUM 및 SOFTWARE 파일 복사만 수행"""
@@ -221,22 +331,32 @@ class AppTableWidget(QWidget):
             if not csv_files:
                 print("CSV 파일이 존재하지 않습니다. SRUM 작업 실패")
                 self.foreground_cycle_time_data = None
+                self.csv_data = None
                 return
 
             csv_file_path = os.path.join(output_csv_dir, csv_files[0])
             print(f"CSV 파일 로드 중: {csv_file_path}")
 
             df = pd.read_csv(csv_file_path)
+            print("[DEBUG] CSV 파일의 열:", df.columns.tolist())
+
+            # TimeStamp를 24시간제로 유지
+            if "Timestamp" in df.columns:
+                df["Timestamp"] = pd.to_datetime(df["Timestamp"]).dt.strftime('%Y-%m-%d %H:%M:%S')
+
+            # ForegroundCycleTime 처리 (기존 로직 유지)
             if "ForegroundCycleTime" in df.columns:
                 self.foreground_cycle_time_data = df["ForegroundCycleTime"].iloc[0]
                 print(f"ForegroundCycleTime: {self.foreground_cycle_time_data}")
                 self.analyze_relationship()
-            else:
-                print("ForegroundCycleTime 열이 없습니다. 데이터를 건너뜁니다.")
-                self.foreground_cycle_time_data = None
+
+            self.csv_data = df  # CSV 데이터를 self.csv_data에 저장
+            print(f"[DEBUG] CSV 데이터 로드 성공 - 총 {len(self.csv_data)}개의 행")
+
         except Exception as e:
             print(f"ForegroundCycleTime 값을 로드하는 중 오류 발생: {e}")
             self.foreground_cycle_time_data = None
+            self.csv_data = None
 
     def analyze_relationship(self):
         if self.foreground_cycle_time_data is None:

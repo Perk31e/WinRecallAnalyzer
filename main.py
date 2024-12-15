@@ -52,8 +52,6 @@ class MainWindow(QMainWindow):
         # 모드 선택 (새로운 로직 추가)
         self.setup_mode()
 
-
-
         # 상단 메뉴바 생성
         self.menu_bar = self.menuBar()
         file_menu = self.menu_bar.addMenu("파일")
@@ -121,7 +119,7 @@ class MainWindow(QMainWindow):
             self.app_table_tab = AppTableWidget(mode=self.current_mode)  # 모드 전달
             self.tab_widget.addTab(self.app_table_tab, "AppTable")
             if self.db_path:
-                self.app_table_tab.set_db_path(self.db_path)
+                self.app_table_tab.set_db_path(self.db_path)  # DB 경로 설정
         except ImportError:
             print("AppTableWidget 모듈을 불러오지 못했습니다.")
 
@@ -155,9 +153,9 @@ class MainWindow(QMainWindow):
     def on_tab_changed(self, index):
         """탭 변경 시 이벤트 처리"""
         tab_name = self.tab_widget.tabText(index)
-        if tab_name in ["ImageTable", "InternalAudit"]:  # ImageTable과 InternalAudit 탭에서는 검색창 숨김
+        if tab_name == "ImageTable":
             self.search_input.hide()
-            if tab_name == "ImageTable" and self.image_table_tab:
+            if self.image_table_tab:
                 self.image_table_tab.setFocus()
         else:
             self.search_input.show()
@@ -439,28 +437,14 @@ class MainWindow(QMainWindow):
         self.app_table_tab.analyze_srum_data_for_analysis_mode()
 
         # ForegroundCycleTime 데이터 로드
-        self.app_table_tab.load_foreground_cycle_time(output_folder)
+        self.load_foreground_cycle_time(output_folder)
 
-    def load_foreground_cycle_time(self, output_folder):
-        """ForegroundCycleTime 데이터를 로드하고 연관 분석 수행"""
-        try:
-            csv_files = [f for f in os.listdir(output_folder) if f.endswith('.csv')]
-            if not csv_files:
-                print("CSV 파일이 존재하지 않습니다.")
-                return
-
-            csv_path = os.path.join(output_folder, csv_files[0])
-            print(f"CSV 파일 로드 중: {csv_path}")
-
-            # pandas 라이브러리 사용하여 CSV 파일 읽기
-            df = pd.read_csv(csv_path)
-            if "ForegroundCycleTime" in df.columns:
-                foreground_cycle_time = df["ForegroundCycleTime"].sum()
-                print(f"ForegroundCycleTime 총합: {foreground_cycle_time}")
-            else:
-                print("ForegroundCycleTime 열을 찾을 수 없습니다.")
-        except Exception as e:
-            print(f"ForegroundCycleTime 데이터를 로드하는 중 오류 발생: {e}")
+        # CSV 데이터를 AppTableWidget에 전달
+        if self.csv_data is not None:
+            print("[DEBUG] CSV 데이터를 AppTableWidget에 전달 중...")
+            self.app_table_tab.set_csv_data(self.csv_data)
+        else:
+            print("[DEBUG] CSV 데이터가 None입니다. AppTableWidget에 전달할 수 없습니다.")
 
     def load_data(self, db_path=None):
         """ukg.db 데이터 로드 및 테이블 업데이트"""
