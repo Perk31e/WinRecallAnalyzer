@@ -400,14 +400,14 @@ class InternalAuditWidget(QWidget):
         # 페이지네이션 컨테이너 생성
         pagination_container = QWidget()
         pagination_layout = QHBoxLayout(pagination_container)
-        pagination_layout.setAlignment(Qt.AlignCenter)
+        pagination_layout.setAlignment(Qt.AlignTop | Qt.AlignCenter)
         
         # 이전 페이지 버튼
         prev_button = QPushButton("<")
         prev_button.setFixedSize(30, 30)
         prev_button.clicked.connect(lambda: self.change_page('prev'))
         prev_button.setEnabled(self.current_page > 1)
-        pagination_layout.addWidget(prev_button)
+        pagination_layout.addWidget(prev_button, 0, Qt.AlignTop)
         
         # 페이지 번호 버튼들
         current_section = (self.current_page - 1) // 10
@@ -443,14 +443,14 @@ class InternalAuditWidget(QWidget):
                     }
                 """)
             btn.clicked.connect(lambda checked, p=page: self.change_page(p))
-            pagination_layout.addWidget(btn)
+            pagination_layout.addWidget(btn, 0, Qt.AlignTop)
         
         # 다음 페이지 버튼
         next_button = QPushButton(">")
         next_button.setFixedSize(30, 30)
         next_button.clicked.connect(lambda: self.change_page('next'))
         next_button.setEnabled(self.current_page < total_pages)
-        pagination_layout.addWidget(next_button)
+        pagination_layout.addWidget(next_button, 0, Qt.AlignTop)
         
         # 이미지 레이아웃에 페이지네이션 추가
         if len(current_page_results) > 0:
