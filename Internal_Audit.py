@@ -56,6 +56,7 @@ class InternalAuditWidget(QWidget):
         # 왼쪽 검색 영역
         left_layout = QHBoxLayout()
         left_layout.setSpacing(5)
+        left_layout.setAlignment(Qt.AlignLeft)
         
         # 키워드 입력 박스 추가
         search_label = QLabel("검색어:")
@@ -126,31 +127,6 @@ class InternalAuditWidget(QWidget):
         
         # 왼쪽 레이아웃을 검색 레이아웃에 추가
         search_layout.addLayout(left_layout)
-        
-        # 오른쪽 페이지네이션 영역
-        right_layout = QHBoxLayout()
-        right_layout.setAlignment(Qt.AlignRight)  # 오른쪽 정렬
-        
-        # 이전 페이지 버튼
-        self.prev_button = QPushButton("<")
-        self.prev_button.setFixedSize(30, 30)
-        self.prev_button.clicked.connect(lambda: self.change_page('prev'))
-        right_layout.addWidget(self.prev_button)
-        
-        # 페이지 번호 레이아웃
-        self.page_numbers_layout = QHBoxLayout()
-        self.page_numbers_layout.setSpacing(2)
-        right_layout.addLayout(self.page_numbers_layout)
-        
-        # 다음 페이지 버튼
-        self.next_button = QPushButton(">")
-        self.next_button.setFixedSize(30, 30)
-        self.next_button.clicked.connect(lambda: self.change_page('next'))
-        right_layout.addWidget(self.next_button)
-        
-        # 오른쪽 레이아웃을 검색 레이아웃에 추가
-        search_layout.addStretch()  # 왼쪽과 오른쪽 사이에 신축성 있는 공간 추가
-        search_layout.addLayout(right_layout)
         
         # 검색 컨테이너를 메인 레이아웃에 추가
         main_layout.addWidget(search_container)
@@ -391,13 +367,12 @@ class InternalAuditWidget(QWidget):
                     self.lower_text_box.setText("검색 결과가 없습니다.")
                     self.current_results = []
                     self.current_page = 1
-                    self.update_pagination(1)
+                    
             else:
                 self.clear_images()
                 self.lower_text_box.setText("검색 결과가 없습니다.")
                 self.current_results = []
                 self.current_page = 1
-                self.update_pagination(1)
                 
         except sqlite3.Error as e:
             print(f"[Internal Audit] 데이터베이스 오류: {e}")
@@ -421,7 +396,68 @@ class InternalAuditWidget(QWidget):
         
         # 현재 페이지의 결과만 표시
         current_page_results = results[start_idx:end_idx]
+
+        # 페이지네이션 컨테이너 생성
+        pagination_container = QWidget()
+        pagination_layout = QHBoxLayout(pagination_container)
+        pagination_layout.setAlignment(Qt.AlignCenter)
         
+        # 이전 페이지 버튼
+        prev_button = QPushButton("<")
+        prev_button.setFixedSize(30, 30)
+        prev_button.clicked.connect(lambda: self.change_page('prev'))
+        prev_button.setEnabled(self.current_page > 1)
+        pagination_layout.addWidget(prev_button)
+        
+        # 페이지 번호 버튼들
+        current_section = (self.current_page - 1) // 10
+        start_page = current_section * 10 + 1
+        end_page = min(start_page + 9, total_pages)
+        
+        for page in range(start_page, end_page + 1):
+            btn = QPushButton(str(page))
+            btn.setFixedSize(30, 30)
+            if page == self.current_page:
+                btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: #0078D7;
+                        color: white;
+                        border: none;
+                        border-radius: 15px;
+                        font-weight: bold;
+                        font-size: 12pt;
+                    }
+                """)
+            else:
+                btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: #f0f0f0;
+                        color: #333333;
+                        border: none;
+                        border-radius: 15px;
+                        font-weight: bold;
+                        font-size: 12pt;
+                    }
+                    QPushButton:hover {
+                        background-color: #e0e0e0;
+                    }
+                """)
+            btn.clicked.connect(lambda checked, p=page: self.change_page(p))
+            pagination_layout.addWidget(btn)
+        
+        # 다음 페이지 버튼
+        next_button = QPushButton(">")
+        next_button.setFixedSize(30, 30)
+        next_button.clicked.connect(lambda: self.change_page('next'))
+        next_button.setEnabled(self.current_page < total_pages)
+        pagination_layout.addWidget(next_button)
+        
+        # 이미지 레이아웃에 페이지네이션 추가
+        if len(current_page_results) > 0:
+            self.image_layout.addWidget(pagination_container, self.image_layout.rowCount(), 0, 1, -1)
+        else:
+            self.image_layout.addWidget(pagination_container, 0, 0, 1, -1)
+
         # 컨테이너 너비 계산 방식 수정
         container_width = self.image_scroll_area.width() - 12  # 스크롤바 영역을 명시적으로 제외
         
@@ -552,9 +588,6 @@ class InternalAuditWidget(QWidget):
         
         # 중앙 컨테이너를 이미지 레이아웃에 추가
         self.image_layout.addWidget(center_container, 0, 0, Qt.AlignLeft | Qt.AlignTop)
-
-        # 페이지네이션 업데이트
-        self.update_pagination(total_pages)
 
     def update_pagination(self, total_pages):
         # 기존 페이지 번호 버튼 제거
