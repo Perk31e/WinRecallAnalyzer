@@ -153,9 +153,9 @@ class MainWindow(QMainWindow):
     def on_tab_changed(self, index):
         """탭 변경 시 이벤트 처리"""
         tab_name = self.tab_widget.tabText(index)
-        if tab_name == "ImageTable":
+        if tab_name in ["ImageTable", "InternalAudit"]:  # ImageTable과 InternalAudit 탭에서는 검색창 숨김
             self.search_input.hide()
-            if self.image_table_tab:
+            if tab_name == "ImageTable" and self.image_table_tab:
                 self.image_table_tab.setFocus()
         else:
             self.search_input.show()

@@ -283,7 +283,6 @@ def load_recovery_data_from_db(db_path):
             r.Name, 
             r.WindowTitle,
             COALESCE(a.Name, ' 이름 없음 (' || rel.AppId || ')') as AppName,
-            COALESCE(w.Uri, '') as Uri,
             CASE 
                 WHEN r.TimeStamp IS NOT NULL 
                 THEN datetime(CAST(CAST(r.TimeStamp AS INTEGER) / 1000 AS INTEGER), 'unixepoch', 'localtime') || '.' ||
@@ -292,14 +291,12 @@ def load_recovery_data_from_db(db_path):
         FROM re_WindowCapture r
         LEFT JOIN re_WindowCaptureAppRelation rel ON r.Id = rel.WindowCaptureId
         LEFT JOIN re_App a ON rel.AppId = a.Id
-        LEFT JOIN re_WindowCaptureWebRelation wrel ON r.Id = wrel.WindowCaptureId
-        LEFT JOIN re_Web w ON wrel.WebId = w.Id
         ORDER BY r.Id;
         """
         
         cursor.execute(query)
         data = cursor.fetchall()
-        headers = ["Id", "Name", "WindowTitle", "AppName", "Uri", "TimeStamp"]
+        headers = ["Id", "Name", "WindowTitle", "AppName", "TimeStamp"]
 
         return data, headers
 
