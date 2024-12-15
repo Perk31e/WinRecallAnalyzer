@@ -704,7 +704,7 @@ class MainWindow(QMainWindow):
                 return  # SRUDB 파일 없으면 분석 중단
 
             # SOFTWARE 파일 선택
-            software_file = self.open_file("SOFTWARE 파일 선택", desktop_path, "All Files (*)")
+            software_file, _ = self.open_file("SOFTWARE 파일 선택", desktop_path, "All Files (*)")
             if software_file:
                 self.software_path = software_file
                 print(f"SOFTWARE 파일이 선택되었습니다: {self.software_path}")
@@ -723,6 +723,13 @@ class MainWindow(QMainWindow):
                     print("[DEBUG] app_table_tab에 analyze_srum_data_for_analysis_mode 메서드가 없습니다.")
             else:
                 print("SRUDB.dat 또는 SOFTWARE 파일이 누락되었습니다. 분석을 진행할 수 없습니다.")
+
+            # Prefetch 데이터 로드 실행 (SRUM 분석 여부와 상관없이 실행)
+            print("Prefetch 데이터 로드를 시작합니다.")
+            if hasattr(self, 'load_prefetch_data'):
+                self.app_table_tab.load_prefetch_data()
+            else:
+                print("[DEBUG] load_prefetch_data 메서드가 존재하지 않습니다.")
 
         except Exception as e:
             print(f"open_additional_files_dialog에서 예외 발생: {e}")
