@@ -421,6 +421,13 @@ class ImageTableWidget(QWidget):
         """로드된 이미지를 QLabel에 표시"""
         if not pixmap.isNull():
             self.image_display.setPixmap(pixmap)
+            # 이미지 테두리 스타일 적용
+            self.image_display.setStyleSheet("""
+                QLabel {
+                    border: 3px solid #007AFF;  /* Toss Blue, 3픽셀 두께 */
+                    border-radius: 5px;
+                }
+            """)
             if self.current_image_index < len(self.images):
                 timestamp = self.get_timestamp(self.images[self.current_image_index][0])
                 self.image_display.setToolTip(f"TimeStamp: {timestamp}")
