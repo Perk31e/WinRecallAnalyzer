@@ -15,6 +15,10 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
+# App_Table
+*_AutomaticDestinations.csv
+*_CustomDestinations.csv
+
 # Recover_Output directory and its contents
 Recover_Output/
 
