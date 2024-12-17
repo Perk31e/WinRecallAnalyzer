@@ -1,7 +1,7 @@
 # Internal_Audit.py
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QTextEdit, QSplitter,
                              QHBoxLayout, QLabel, QPushButton, QLineEdit, QScrollArea, QGridLayout, QFrame, QDialog, QVBoxLayout, QHBoxLayout, QCheckBox, 
-                              QDialogButtonBox, QMessageBox, QMenuBar)
+                              QDialogButtonBox, QMessageBox, QMenuBar, QSizePolicy)
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap, QAction
 import sqlite3
@@ -42,6 +42,28 @@ class InternalAuditWidget(QWidget):
         self.current_page = 1  # 현재 페이지
         self.images_per_page = 28  # 페이지당 이미지 수
         self.setup_ui()
+
+    def create_preset_button(self, text, click_handler):
+        """내부 감사용 프리셋 검색 버튼 생성 헬퍼 메서드"""
+        preset_button = QPushButton(text)
+        preset_button.setStyleSheet("""
+            QPushButton {
+                background-color: #ff4444;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 0px 5px;
+                height: %dpx;
+            }
+            QPushButton:hover {
+                background-color: #ff0000;
+            }
+        """ % self.keyword_search.sizeHint().height())
+        
+        preset_button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        preset_button.adjustSize()
+        preset_button.clicked.connect(click_handler)
+        return preset_button
 
     def setup_ui(self):
         # 메인 레이아웃
@@ -125,6 +147,13 @@ class InternalAuditWidget(QWidget):
         reset_button.clicked.connect(self.reset_search)
         left_layout.addWidget(reset_button)
         
+        # 자료 송수신 기록 버튼 추가
+        data_transfer_button = self.create_preset_button(
+            "자료 송수신 기록", 
+            self.search_data_transfer
+        )
+        left_layout.addWidget(data_transfer_button)
+
         # 왼쪽 레이아웃을 검색 레이아웃에 추가
         search_layout.addLayout(left_layout)
         
@@ -172,6 +201,19 @@ class InternalAuditWidget(QWidget):
 
         # 이미지 컨테이너의 여백 제거
         self.image_container.setContentsMargins(0, 0, 0, 0)
+
+    def search_data_transfer(self):
+        """자료 송수신 기록 검색 실행"""
+        try:
+            with open('search_terms.json', 'r', encoding='utf-8') as f:
+                search_terms_file = json.load(f)
+                for term in search_terms_file:
+                    if term['name'] == "자료 송수신 기록":
+                        self.keyword_search.setText(term['term'])
+                        self.search_images()
+                        break
+        except Exception as e:
+            print(f"[Internal Audit] search_terms.json 로드 오류: {e}")
 
     def set_db_path(self, db_path):
         """데이터베이스 경로 설정"""
