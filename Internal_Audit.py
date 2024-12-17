@@ -148,9 +148,21 @@ class InternalAuditWidget(QWidget):
         left_layout.addWidget(reset_button)
         
         # 자료 송수신 기록 버튼 추가
+        PC_Messenger_button = self.create_preset_button(
+            "PC 메신저 사용 기록", 
+            lambda: self.search_data_transfer("PC 메신저 사용 기록")
+        )
+        left_layout.addWidget(PC_Messenger_button)
+
+        mail_transfer_button = self.create_preset_button(
+            "메일 사용 기록",
+            lambda: self.search_data_transfer("메일 사용 기록")
+        )
+        left_layout.addWidget(mail_transfer_button)
+
         data_transfer_button = self.create_preset_button(
             "자료 송수신 기록", 
-            self.search_data_transfer
+            lambda: self.search_data_transfer("자료 송수신 기록")
         )
         left_layout.addWidget(data_transfer_button)
 
@@ -202,13 +214,13 @@ class InternalAuditWidget(QWidget):
         # 이미지 컨테이너의 여백 제거
         self.image_container.setContentsMargins(0, 0, 0, 0)
 
-    def search_data_transfer(self):
-        """자료 송수신 기록 검색 실행"""
+    def search_data_transfer(self, search_name):
+        """프리셋 검색어로 검색 실행"""
         try:
             with open('search_terms.json', 'r', encoding='utf-8') as f:
                 search_terms_file = json.load(f)
                 for term in search_terms_file:
-                    if term['name'] == "자료 송수신 기록":
+                    if term['name'] == search_name:
                         self.keyword_search.setText(term['term'])
                         self.search_images()
                         break
