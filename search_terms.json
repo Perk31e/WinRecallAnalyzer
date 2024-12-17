@@ -1,6 +1,27 @@
 [
   {
     "enabled": false,
+      "name": "유출 경로 - 메일 기반",
+      "term": "{메일 사용 기록} && ({문서 파일} || {압축 파일} || {코드/개발 파일})",
+    "and_checked": true,
+    "or_checked": false
+  },
+  {
+    "enabled": false,
+      "name": "유출 경로 - 클라우드 서비스",
+      "term": "{클라우드 및 파일 공유 서비스 사용 기록} && {자료 송수신}",
+    "and_checked": true,
+    "or_checked": false
+  },
+  {
+    "enabled": false, 
+      "name": "유출 경로 - 웹 기반",
+      "term": "{브라우저} && {자료 송수신}",
+    "and_checked": true,
+    "or_checked": false
+  },
+  {
+    "enabled": false,
     "name": "내부 자료 유출",
     "term": "{내부 자료} && {자료 송수신}",
     "and_checked": true,
@@ -12,6 +33,55 @@
     "term": "({문서 파일} || {압축 파일} || {코드/개발 파일} || {CAD/3D 파일} || {기타 파일} || {이미지 파일} || {오디오 파일} || {비디오 파일}) && {자료 송수신}",
     "and_checked": true,
     "or_checked": false
+  },
+  {
+    "enabled": false,
+      "name": "증거 은닉 및 삭제",
+      "term": "{데이터 삭제 및 파기} || fraudulent || altered documents || 은닉 || 삭제 기록",
+    "and_checked": false,
+    "or_checked": true
+  },
+  {
+    "enabled": false,
+      "name": "횡령 - 청구서 조작",
+      "term": "billing fraud || 청구서 조작 || invoice fraud || 인보이스 조작",
+    "and_checked": false,
+    "or_checked": true
+  },
+  {
+    "enabled": false,
+      "name": "횡령 - 결제 조작",
+      "term": "check tampering || 결제 조작 || payment fraud || 지불 조작",
+    "and_checked": false,
+    "or_checked": true
+  },
+  {
+    "enabled": false,
+      "name": "횡령 - 급여 부정",
+      "term": "payroll fraud || 급여 부정 || salary fraud || 급여 조작",
+    "and_checked": false,
+    "or_checked": true
+  },
+  {
+    "enabled": false,
+      "name": "행동 징후",
+      "term": "behavioral red flags || 행동 징후 || 비정상 행위 || 패턴 분석",
+    "and_checked": false,
+    "or_checked": true
+  },
+  {
+    "enabled": false,
+      "name": "무단 접근 및 데이터 유출",
+      "term": "{무단 접근} && ({문서 파일} || {압축 파일} || {기타 파일})",
+      "and_checked": true,
+      "or_checked": false
+  },
+  {
+    "enabled": false,
+      "name": "내부자 위협",
+      "term": "internal threat || insider || 내부자 위협 || 정보 유출 || collusion || 공모",
+    "and_checked": false,
+    "or_checked": true
   },
   {
     "enabled": false,
