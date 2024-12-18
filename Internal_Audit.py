@@ -1093,6 +1093,12 @@ class InternalAuditWidget(QWidget):
                                     <p><b style='font-size: 12pt;'>OCR 출력물:</b></p>
                                     <p>{highlighted_text}</p>
                                     """
+                else:
+                    output_text += f"""
+                                    <hr style='border: 1px solid #e0e0e0; margin: 10px 0;'>
+                                    <p><b style='font-size: 12pt;'>OCR 출력물:</b></p>
+                                    <p>N/A</p>
+                                    """
                 
                 output_text += "</div>"
                 self.lower_text_box.setHtml(output_text)
