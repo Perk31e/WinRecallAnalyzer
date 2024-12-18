@@ -23,7 +23,7 @@
   {
     "enabled": false,
     "name": "외장 저장장치 기록",
-    "term": "!! c:\\",
+    "term": "!! c:\\ || (usb || 이동식 디스크 || Removable Disk)",
     "and_checked": true,
     "or_checked": false
   },
