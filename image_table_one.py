@@ -117,7 +117,7 @@ class ImageTableWidget(QWidget):
         self.current_timestamp_label = QLabel()
         self.current_timestamp_label.setStyleSheet("""
             QLabel {
-                font-size: 10pt;
+                font-size: 12pt;
                 color: #333333;
             }
         """)
