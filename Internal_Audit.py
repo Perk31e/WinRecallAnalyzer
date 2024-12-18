@@ -254,7 +254,152 @@ class InternalAuditWidget(QWidget):
         """OCR, App, Web, File 검색 수행"""
         # 검색 시작 시 현재 페이지를 1로 초기화
         self.current_page = 1
-        
+
+        def parse_expression(expression, patterns, param_list):
+            """검색 표현식 파싱 함수"""
+            print(f"[DEBUG] Parsing expression: '{expression}'")
+            
+            def process_special_patterns(expr, patterns):
+                """특수 검색어 패턴 처리"""
+                conditions = []
+                params = []
+                
+                for pattern, (like_condition, null_condition) in patterns.items():
+                    matches = re.finditer(pattern, expr)
+                    for match in matches:
+                        search_term = match.group(1)
+                        if search_term.lower() == "n/a":
+                            conditions.append(null_condition)
+                        else:
+                            conditions.append(like_condition)
+                            params.append(f"%{search_term}%")
+                        expr = expr.replace(match.group(0), "")
+                
+                return expr.strip(), conditions, params
+            
+            def process_term(term):
+                """단일 검색어 처리"""
+                is_not = term.startswith('!!')
+                if is_not:
+                    term = term[2:].strip()
+                
+                condition = """
+                    (wc.WindowTitle LIKE ? OR
+                        a.Name LIKE ? OR
+                        wctc.c2 LIKE ?)
+                """
+                
+                if is_not:
+                    condition = f"NOT {condition}"
+                
+                param_list.extend([f"%{term}%" for _ in range(3)])
+                return condition
+
+            def split_with_operator(expr, operator):
+                """연산자로 문자열 분리 (괄호 고려)"""
+                result = []
+                current = []
+                paren_count = 0
+                i = 0
+                
+                while i < len(expr):
+                    if expr[i] == '(':
+                        paren_count += 1
+                        current.append(expr[i])
+                    elif expr[i] == ')':
+                        paren_count -= 1
+                        current.append(expr[i])
+                    elif paren_count == 0 and i < len(expr) - 1 and expr[i:i+2] == operator:
+                        result.append(''.join(current).strip())
+                        current = []
+                        i += 1
+                    else:
+                        current.append(expr[i])
+                    i += 1
+                    
+                if current:
+                    result.append(''.join(current).strip())
+                return result
+
+            def process_group(expr):
+                """괄호로 묶인 그룹 처리"""
+                print(f"[DEBUG] Processing group: {expr}")
+                expr = expr.strip()
+                
+                if not expr:
+                    return "1=1"  # 빈 표현식은 항상 참인 조건으로 변환
+                
+                # 괄호 제거 (가장 바깥쪽만)
+                if expr.startswith('(') and expr.endswith(')'):
+                    # 괄호 균형 확인
+                    paren_count = 0
+                    for char in expr[:-1]:  # 마지막 괄호 제외
+                        if char == '(':
+                            paren_count += 1
+                        elif char == ')':
+                            paren_count -= 1
+                        if paren_count == 0:
+                            break
+                    if paren_count == 1:  # 올바른 괄호쌍
+                        inner_expr = expr[1:-1].strip()
+                        if not inner_expr:  # 빈 괄호인 경우
+                            return "1=1"
+                        expr = inner_expr
+                
+                # OR 연산자로 분리
+                or_terms = split_with_operator(expr, '||')
+                or_conditions = []
+                
+                for or_term in or_terms:
+                    # AND 연산자로 분리
+                    and_terms = split_with_operator(or_term, '&&')
+                    and_conditions = []
+                    
+                    for and_term in and_terms:
+                        term = and_term.strip()
+                        if not term:
+                            continue
+                        
+                        if term.startswith('!!'):
+                            # NOT 연산자 처리
+                            inner_term = term[2:].strip()
+                            if inner_term.startswith('('):
+                                and_conditions.append(f"NOT {process_group(inner_term)}")
+                            else:
+                                and_conditions.append(process_term(term))
+                        elif term.startswith('('):
+                            group_result = process_group(term)
+                            if group_result != "1=1":  # 빈 그룹이 아닌 경우만 추가
+                                and_conditions.append(group_result)
+                        else:
+                            and_conditions.append(process_term(term))
+                    
+                    if and_conditions:
+                        or_conditions.append(f"({' AND '.join(and_conditions)})")
+                
+                if not or_conditions:
+                    return "1=1"
+                
+                return f"({' OR '.join(or_conditions)})"
+
+            # 특수 패턴 처리
+            remaining_expr, special_conditions, special_params = process_special_patterns(expression, patterns)
+            param_list.extend(special_params)
+            
+            # 일반 검색어 처리
+            regular_condition = process_group(remaining_expr) if remaining_expr else ""
+            
+            # 최종 조건 결합
+            all_conditions = []
+            if special_conditions:
+                all_conditions.extend(special_conditions)
+            if regular_condition:
+                all_conditions.append(regular_condition)
+            
+            final_condition = ' AND '.join(f"({cond})" for cond in all_conditions) if all_conditions else ""
+            print(f"[DEBUG] Final SQL condition: {final_condition}")
+            return final_condition
+
         original_keyword = self.keyword_search.text().strip()  # 원본 키워드 저장
         if not original_keyword:
             self.load_all_images()
@@ -316,82 +461,14 @@ class InternalAuditWidget(QWidget):
                 for match in matches:
                     search_term = match.group(1)  # (\S+) 캡처
                     if search_term.lower() == "n/a":
-                        conditions.append(null_condition)  # 예: w.Uri IS NULL
+                        conditions.append(null_condition)
                     else:
-                        conditions.append(like_condition)  # 예: w.Uri LIKE ?
+                        conditions.append(like_condition)
                         params.append(f"%{search_term}%")
+                    # 매칭된 부분을 제거
                     remaining_text = remaining_text.replace(match.group(0), "")
-
-
-            # 일반 검색어 처리 (남은 텍스트에서)
+                # 남은 일반 검색어 처리
             remaining_text = remaining_text.strip()
-            if remaining_text:
-                # AND/OR 검색 처리
-                def parse_expression(expression, patterns, param_list):
-                    """검색 표현식 파싱 함수"""
-                    # 토큰화 - NOT 연산자 추가
-                    tokens = re.split(r'(\s+\|\|\s+|\s+&&\s+|\(|\)|\s*!!\s*)', expression)
-                    tokens = [token.strip() for token in tokens if token and token.strip()]
-                    
-                    # 조건 스택
-                    conditions = []
-                    operators = []
-                    
-                    def apply_operator():
-                        if len(conditions) < 2 and operators[-1] != '!!':
-                            return
-                            
-                        operator = operators.pop()
-                        if operator == '!!':
-                            operand = conditions.pop()
-                            # NOT 연산을 위한 조건 생성
-                            conditions.append(f"NOT ({operand})")
-                        else:
-                            right = conditions.pop()
-                            left = conditions.pop()
-                            if operator == '||':
-                                conditions.append(f"({left} OR {right})")
-                            else:  # AND
-                                conditions.append(f"({left} AND {right})")
-                    
-                    i = 0
-                    while i < len(tokens):
-                        token = tokens[i]
-                        
-                        if token == '(':
-                            operators.append(token)
-                        elif token == ')':
-                            while operators and operators[-1] != '(':
-                                apply_operator()
-                            if operators:
-                                operators.pop()  # '(' 제거
-                        elif token == '!!':
-                            operators.append(token)
-                        elif token in ['&&', '||']:
-                            while operators and operators[-1] not in ['('] and token != '!!':
-                                apply_operator()
-                            operators.append(token)
-                        else:
-                            # 일반 검색어 처리
-                            conditions.append(f"""
-                                (wc.WindowTitle LIKE ? OR
-                                 a.Name LIKE ? OR
-                                 wctc.c2 LIKE ?)
-                            """)
-                            param_list.extend([f"%{token}%" for _ in range(3)])
-                            
-                            # NOT 연산자가 있다면 즉시 적용
-                            if operators and operators[-1] == '!!':
-                                apply_operator()
-                        i += 1
-                    
-                    while operators:
-                        apply_operator()
-                    
-                    return conditions[0] if conditions else ""
-
-            # 일반 검색어 처리 (남은 텍스트에서)
-            remaining_text = keyword.strip()
             if remaining_text:
                 condition = parse_expression(remaining_text, field_patterns, params)
                 if condition:
@@ -880,6 +957,13 @@ class InternalAuditWidget(QWidget):
                 print(f"[DEBUG][highlight_search_display] Called with search_str='{search_str}'")
                 print(f"[DEBUG][highlight_search_display] highlight_terms={terms}")
                 
+                # == 연산자의 왼쪽 부분을 저장할 집합
+                eq_left_terms = set()
+                for term in terms:
+                    if '==' in term:
+                        left, _ = map(str.strip, term.split('=='))
+                        eq_left_terms.add(left)
+                
                 display = search_str
                 
                 # NOT 연산자 패턴
@@ -889,25 +973,6 @@ class InternalAuditWidget(QWidget):
                     r'!!\s*\{([^}]+)\}'  # !!{검색어명} 패턴
                 ]
                 
-                # term 강조 (파란색 굵게) - 하지만 {} 내는 나중에 처리
-                # 우선 여기서는 일반 단어는 파란색 굵게 처리하고, NOT 영향을 받는 단어는 빨간색 굵게 처리
-                # 단, {검색어명} 형식은 나중에 별도 처리할테니 일단 이 함수에서는
-                # highlight_terms(실제 jpg, png 등)만 처리하면 됨.
-                
-                # 여기서 {} 안의 단어는 나중에 처리하므로 지금은 단어 강조와 NOT 처리만 수행
-                # placeholder( {검색어명} )는 여기서 파란색/빨간색 처리하지 않음.
-                # highlight_terms에는 실제 파일 확장자나 단일 검색어들(jpg, png...)이 들어있음.
-                
-                # 우선 {..} 구문을 임시로 빼내어 단어 강조 -> 복원 로직 수행 X
-                # 여기서는 highlight_terms는 단어 강조를 위해 색을 바꾸는데,
-                # {..} 안에 있는 단어는 highlight하지 않을것이므로 그냥 단순히
-                # search_str 내에서 highlight_terms에 있는 단어들을 파란색으로 표시하고,
-                # NOT의 영향을 받는 단어들은 빨간색으로 표시한다.
-                # 하지만 여기서 원 요청사항은 {} 안의 명칭을 파랗게 하고 싶지만
-                # braces 자체는 파란색 하지 말라고 했다. 그러므로 아래에서는 일단
-                # highlight_terms는 중괄호와 상관없이 일반 단어 강조.
-                # 이후 별도의 단계에서 {검색어명}을 처리한다.
-
                 # { ... } 구문은 나중에 처리하기 위해 임시 치환
                 placeholders = re.findall(r'\{[^}]+\}', display)
                 placeholder_map = {}
@@ -924,15 +989,13 @@ class InternalAuditWidget(QWidget):
                 not_bracket_contents = []
                 while i < len(display):
                     if i < len(display)-1 and display[i:i+2] == '!!':
-                        # !! 다음의 첫 중괄호 찾기
                         for j in range(i+2, len(display)):
                             if display[j] == '{':
                                 start = j
-                                # 중괄호의 끝 찾기
                                 for k in range(j+1, len(display)):
                                     if display[k] == '}':
                                         content = display[start:k+1]
-                                        inner_text = content[1:-1]  # 중괄호 제외한 내용
+                                        inner_text = content[1:-1]
                                         not_bracket_contents.append({
                                             'full': content,
                                             'inner': inner_text,
@@ -946,31 +1009,34 @@ class InternalAuditWidget(QWidget):
                 
                 print(f"[DEBUG] Found NOT bracket contents: {not_bracket_contents}")
 
-                # NOT 영향을 받는 단어들 추출 (중괄호 외의 일반 단어용)
+                # NOT 영향을 받는 단어들 추출
                 not_affected_terms = set()
                 for pattern in not_patterns:
                     matches = re.finditer(pattern, temp_display)
                     for match in matches:
                         content = match.group(1)
                         print(f"[DEBUG] Found NOT pattern match: '{content}'")
-                        # 괄호 안의 내용이면 연산자로 분리
-                        if '||' in content or '&&' in content:
-                            # 연산자를 기준으로 분리하고 각 단어 추출
-                            words = re.split(r'\s*(?:\|\||\&\&)\s*', content)
-                            for word in words:
-                                # 중괄호가 있는 경우는 건너뛰기 (위에서 처리했으므로)
-                                if '{' not in word and '}' not in word:
-                                    print(f"[DEBUG] Adding NOT term: '{word.strip()}'")
-                                    not_affected_terms.add(word.strip())
+                        # == 연산자가 있는 경우 오른쪽 부분만 처리
+                        if '==' in content:
+                            _, right = map(str.strip, content.split('=='))
+                            if not (right.startswith('%') and right.endswith('%')):
+                                not_affected_terms.add(right.strip())
                         else:
-                            # 중괄호가 없는 경우만 처리
-                            if '{' not in content and '}' not in content:
-                                print(f"[DEBUG] Adding single NOT term: '{content.strip()}'")
-                                not_affected_terms.add(content.strip())
+                            # 괄호 안의 내용이면 연산자로 분리
+                            if '||' in content or '&&' in content:
+                                words = re.split(r'\s*(?:\|\||\&\&)\s*', content)
+                                for word in words:
+                                    if '{' not in word and '}' not in word:
+                                        print(f"[DEBUG] Adding NOT term: '{word.strip()}'")
+                                        not_affected_terms.add(word.strip())
+                            else:
+                                if '{' not in content and '}' not in content:
+                                    print(f"[DEBUG] Adding single NOT term: '{content.strip()}'")
+                                    not_affected_terms.add(content.strip())
 
                 print(f"[DEBUG] Final NOT affected terms: {not_affected_terms}")
 
-                # 결과 문자열 생성을 위해 리스트로 변환
+                # 결과 문자열 생성
                 result = list(display)
                 
                 # !! 뒤의 중괄호 내용을 빨간색으로 처리
@@ -981,6 +1047,24 @@ class InternalAuditWidget(QWidget):
                     print(f"[DEBUG] Applied RED color to NOT bracket content: {inner_text}")
                 
                 result = ''.join(result)
+                
+                # == 연산자가 있는 경우 오른쪽 부분만 처리
+                for term in terms:
+                    if '==' in term:
+                        left, right = map(str.strip, term.split('=='))
+                        if not (right.startswith('%') and right.endswith('%')):
+                            if term.startswith('!!'):
+                                result = re.sub(
+                                    r'==\s*' + re.escape(right),
+                                    f'== <span style="color: #FF0000; font-weight: bold; font-size:14pt;">{right}</span>',
+                                    result
+                                )
+                            else:
+                                result = re.sub(
+                                    r'==\s*' + re.escape(right),
+                                    f'== <span style="color: #0078D7; font-weight: bold; font-size:14pt;">{right}</span>',
+                                    result
+                                )
                 
                 # NOT 영향을 받는 일반 단어들 빨간색으로 처리
                 for term in not_affected_terms:
@@ -993,7 +1077,7 @@ class InternalAuditWidget(QWidget):
 
                 # 나머지 검색어들 파란색으로 처리 (!! 제외)
                 for term in terms:
-                    if term not in not_affected_terms and term != '!!':  # !! 연산자 제외
+                    if term not in not_affected_terms and term != '!!' and term not in eq_left_terms:  # == 연산자의 왼쪽도 제외
                         result = re.sub(
                             r'(?<!!)(?<!{)' + re.escape(term) + r'(?!})',
                             f'<span style="color: #0078D7; font-weight: bold; font-size:14pt;">{term}</span>',

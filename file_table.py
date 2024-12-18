@@ -70,8 +70,8 @@ class FileTableWidget(QWidget):
             # Path 칼럼의 인덱스 가져오기
             path_column_index = headers.index('Path')
             
-            # Path 칼럼의 너비를 300픽셀로 설정
-            self.table_view.setColumnWidth(path_column_index, 300)
+            # Path 칼럼의 너비를 400픽셀로 설정
+            self.table_view.setColumnWidth(path_column_index, 400)
         else:
             self.table_view.setModel(None)
 
