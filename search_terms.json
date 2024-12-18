@@ -22,6 +22,13 @@
   },
   {
     "enabled": false,
+    "name": "외장 저장장치 기록",
+    "term": "!! c:\\",
+    "and_checked": true,
+    "or_checked": false
+  },
+  {
+    "enabled": false,
     "name": "내부 자료 유출",
     "term": "{내부 자료} && {자료 송수신}",
     "and_checked": true,

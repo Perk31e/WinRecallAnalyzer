@@ -166,6 +166,12 @@ class InternalAuditWidget(QWidget):
         )
         left_layout.addWidget(data_transfer_button)
 
+        data_transfer_button = self.create_preset_button(
+            "외장 저장장치 기록", 
+            lambda: self.search_data_transfer("외장 저장장치 기록")
+        )
+        left_layout.addWidget(data_transfer_button)
+
         # 왼쪽 레이아웃을 검색 레이아웃에 추가
         search_layout.addLayout(left_layout)
         
@@ -217,15 +223,25 @@ class InternalAuditWidget(QWidget):
     def search_data_transfer(self, search_name):
         """프리셋 검색어로 검색 실행"""
         try:
+            # 먼저 search_terms.json에서 해당 검색어명이 존재하는지 확인
             with open('search_terms.json', 'r', encoding='utf-8') as f:
                 search_terms_file = json.load(f)
-                for term in search_terms_file:
-                    if term['name'] == search_name:
-                        self.keyword_search.setText(term['term'])
-                        self.search_images()
-                        break
+                exists = any(term['name'] == search_name for term in search_terms_file)
+                
+                if exists:
+                    # 존재하는 검색어명이면 중괄호 형식으로 설정
+                    self.keyword_search.setText(f"{{{search_name}}}")
+                    self.search_images()
+                else:
+                    print(f"[Internal Audit] 경고: '{search_name}'은(는) search_terms.json에 정의되지 않은 검색어입니다.")
+                    QMessageBox.warning(self, "검색어 오류", 
+                        f"'{search_name}'은(는) 정의되지 않은 검색어입니다.\n"
+                        "search_terms.json 파일을 확인해주세요.")
+                    
         except Exception as e:
             print(f"[Internal Audit] search_terms.json 로드 오류: {e}")
+            QMessageBox.critical(self, "오류", 
+                f"search_terms.json 파일을 읽는 중 오류가 발생했습니다.\n{str(e)}")
 
     def set_db_path(self, db_path):
         """데이터베이스 경로 설정"""
@@ -310,26 +326,36 @@ class InternalAuditWidget(QWidget):
             if remaining_text:
                 # AND/OR 검색 처리
                 def parse_expression(expression, patterns, param_list):
-                    # 토큰화
-                    tokens = re.split(r'(\s+\|\|\s+|\s+&&\s+|\(|\))', expression)
-                    tokens = [token.strip() for token in tokens if token.strip()]
+                    """검색 표현식 파싱 함수"""
+                    # 토큰화 - NOT 연산자 추가
+                    tokens = re.split(r'(\s+\|\|\s+|\s+&&\s+|\(|\)|\s*!!\s*)', expression)
+                    tokens = [token.strip() for token in tokens if token and token.strip()]
                     
                     # 조건 스택
                     conditions = []
                     operators = []
                     
                     def apply_operator():
-                        if len(conditions) < 2:
+                        if len(conditions) < 2 and operators[-1] != '!!':
                             return
-                        right = conditions.pop()
-                        left = conditions.pop()
+                            
                         operator = operators.pop()
-                        if operator == '||':
-                            conditions.append(f"({left} OR {right})")
-                        else:  # AND
-                            conditions.append(f"({left} AND {right})")
+                        if operator == '!!':
+                            operand = conditions.pop()
+                            # NOT 연산을 위한 조건 생성
+                            conditions.append(f"NOT ({operand})")
+                        else:
+                            right = conditions.pop()
+                            left = conditions.pop()
+                            if operator == '||':
+                                conditions.append(f"({left} OR {right})")
+                            else:  # AND
+                                conditions.append(f"({left} AND {right})")
                     
-                    for token in tokens:
+                    i = 0
+                    while i < len(tokens):
+                        token = tokens[i]
+                        
                         if token == '(':
                             operators.append(token)
                         elif token == ')':
@@ -337,33 +363,25 @@ class InternalAuditWidget(QWidget):
                                 apply_operator()
                             if operators:
                                 operators.pop()  # '(' 제거
+                        elif token == '!!':
+                            operators.append(token)
                         elif token in ['&&', '||']:
-                            while operators and operators[-1] not in ['(']:
+                            while operators and operators[-1] not in ['('] and token != '!!':
                                 apply_operator()
-                            operators.append('||' if token == '||' else 'AND')
+                            operators.append(token)
                         else:
-                            # 필드별 검색 패턴 확인
-                            field_match = False
-                            for pattern, (like_condition, null_condition) in patterns.items():
-                                if re.match(pattern, token):
-                                    match = re.match(pattern, token)
-                                    search_term = match.group(1)
-                                    if search_term.lower() == "n/a":
-                                        conditions.append(null_condition)
-                                    else:
-                                        conditions.append(like_condition)
-                                        param_list.append(f"%{search_term}%")
-                                    field_match = True
-                                    break
-                            
                             # 일반 검색어 처리
-                            if not field_match:
-                                conditions.append(f"""
-                    (wc.WindowTitle LIKE ? OR
-                     a.Name LIKE ? OR
-                     wctc.c2 LIKE ?)
-                """)
-                                param_list.extend([f"%{token}%" for _ in range(3)])
+                            conditions.append(f"""
+                                (wc.WindowTitle LIKE ? OR
+                                 a.Name LIKE ? OR
+                                 wctc.c2 LIKE ?)
+                            """)
+                            param_list.extend([f"%{token}%" for _ in range(3)])
+                            
+                            # NOT 연산자가 있다면 즉시 적용
+                            if operators and operators[-1] == '!!':
+                                apply_operator()
+                        i += 1
                     
                     while operators:
                         apply_operator()
@@ -856,22 +874,33 @@ class InternalAuditWidget(QWidget):
             print(f"[DEBUG][show_ocr_content] highlight_terms = {highlight_terms}")
             # 검색어 표시용 함수
             def highlight_search_display(search_str, terms):
+                """검색어 표시용 함수"""
                 print(f"[DEBUG][highlight_search_display] Called with search_str='{search_str}'")
                 print(f"[DEBUG][highlight_search_display] highlight_terms={terms}")
-                # 여기서 {} 안의 단어는 나중에 처리하므로 지금은 단어 강조만 처리
+                
                 display = search_str
+                
+                # NOT 연산자 패턴
+                not_patterns = [
+                    r'!!\s*\(([^)]+)\)',  # !!(...) 패턴
+                    r'!!\s*([^&|=\s()]+)', # !!word 패턴
+                    r'!!\s*\{([^}]+)\}'  # !!{검색어명} 패턴
+                ]
+                
                 # term 강조 (파란색 굵게) - 하지만 {} 내는 나중에 처리
-                # 우선 여기서는 기존처럼 일반 단어만 파란색 굵게 처리
+                # 우선 여기서는 일반 단어는 파란색 굵게 처리하고, NOT 영향을 받는 단어는 빨간색 굵게 처리
                 # 단, {검색어명} 형식은 나중에 별도 처리할테니 일단 이 함수에서는
                 # highlight_terms(실제 jpg, png 등)만 처리하면 됨.
                 
-                # placeholder( {검색어명} )는 여기서 파란색 처리하지 않음.
+                # 여기서 {} 안의 단어는 나중에 처리하므로 지금은 단어 강조와 NOT 처리만 수행
+                # placeholder( {검색어명} )는 여기서 파란색/빨간색 처리하지 않음.
                 # highlight_terms에는 실제 파일 확장자나 단일 검색어들(jpg, png...)이 들어있음.
                 
                 # 우선 {..} 구문을 임시로 빼내어 단어 강조 -> 복원 로직 수행 X
                 # 여기서는 highlight_terms는 단어 강조를 위해 색을 바꾸는데,
                 # {..} 안에 있는 단어는 highlight하지 않을것이므로 그냥 단순히
-                # search_str 내에서 highlight_terms에 있는 단어들을 파란색으로 표시한다.
+                # search_str 내에서 highlight_terms에 있는 단어들을 파란색으로 표시하고,
+                # NOT의 영향을 받는 단어들은 빨간색으로 표시한다.
                 # 하지만 여기서 원 요청사항은 {} 안의 명칭을 파랗게 하고 싶지만
                 # braces 자체는 파란색 하지 말라고 했다. 그러므로 아래에서는 일단
                 # highlight_terms는 중괄호와 상관없이 일반 단어 강조.
@@ -885,23 +914,93 @@ class InternalAuditWidget(QWidget):
                 temp_display = display
                 for k, v in placeholder_map.items():
                     temp_display = temp_display.replace(v, k)
+                
+                print(f"[DEBUG] After placeholder replacement: {temp_display}")
+                
+                # !! 뒤에 나오는 중괄호 내용 찾기
+                i = 0
+                not_bracket_contents = []
+                while i < len(display):
+                    if i < len(display)-1 and display[i:i+2] == '!!':
+                        # !! 다음의 첫 중괄호 찾기
+                        for j in range(i+2, len(display)):
+                            if display[j] == '{':
+                                start = j
+                                # 중괄호의 끝 찾기
+                                for k in range(j+1, len(display)):
+                                    if display[k] == '}':
+                                        content = display[start:k+1]
+                                        inner_text = content[1:-1]  # 중괄호 제외한 내용
+                                        not_bracket_contents.append({
+                                            'full': content,
+                                            'inner': inner_text,
+                                            'start': start,
+                                            'end': k+1
+                                        })
+                                        i = k
+                                        break
+                                break
+                    i += 1
+                
+                print(f"[DEBUG] Found NOT bracket contents: {not_bracket_contents}")
 
-                # highlight_terms에 대해 파란색 굵게 처리
-                # 하지만 highlight_terms는 jpg, png 같은 실제 검색어 단어들
-                # 여기서는 검색어명 강조 안함
+                # NOT 영향을 받는 단어들 추출 (중괄호 외의 일반 단어용)
+                not_affected_terms = set()
+                for pattern in not_patterns:
+                    matches = re.finditer(pattern, temp_display)
+                    for match in matches:
+                        content = match.group(1)
+                        print(f"[DEBUG] Found NOT pattern match: '{content}'")
+                        # 괄호 안의 내용이면 연산자로 분리
+                        if '||' in content or '&&' in content:
+                            # 연산자를 기준으로 분리하고 각 단어 추출
+                            words = re.split(r'\s*(?:\|\||\&\&)\s*', content)
+                            for word in words:
+                                # 중괄호가 있는 경우는 건너뛰기 (위에서 처리했으므로)
+                                if '{' not in word and '}' not in word:
+                                    print(f"[DEBUG] Adding NOT term: '{word.strip()}'")
+                                    not_affected_terms.add(word.strip())
+                        else:
+                            # 중괄호가 없는 경우만 처리
+                            if '{' not in content and '}' not in content:
+                                print(f"[DEBUG] Adding single NOT term: '{content.strip()}'")
+                                not_affected_terms.add(content.strip())
+
+                print(f"[DEBUG] Final NOT affected terms: {not_affected_terms}")
+
+                # 결과 문자열 생성을 위해 리스트로 변환
+                result = list(display)
+                
+                # !! 뒤의 중괄호 내용을 빨간색으로 처리
+                for content in not_bracket_contents:
+                    inner_text = content['inner']
+                    colored_text = f'{{<span style="color: #FF0000; font-weight: bold; font-size:14pt;">{inner_text}</span>}}'
+                    result[content['start']:content['end']] = colored_text
+                    print(f"[DEBUG] Applied RED color to NOT bracket content: {inner_text}")
+                
+                result = ''.join(result)
+                
+                # NOT 영향을 받는 일반 단어들 빨간색으로 처리
+                for term in not_affected_terms:
+                    if term != '!!':  # !! 연산자 제외
+                        result = re.sub(
+                            r'(?<!{)' + re.escape(term) + r'(?!})',
+                            f'<span style="color: #FF0000; font-weight: bold; font-size:14pt;">{term}</span>',
+                            result
+                        )
+
+                # 나머지 검색어들 파란색으로 처리 (!! 제외)
                 for term in terms:
-                    temp_display = re.sub(
-                        re.escape(term),
-                        f'<b style="font-size:14pt; color:#0078D7;">\\g<0></b>',
-                        temp_display,
-                        flags=re.IGNORECASE
-                    )
+                    if term not in not_affected_terms and term != '!!':  # !! 연산자 제외
+                        result = re.sub(
+                            r'(?<!!)(?<!{)' + re.escape(term) + r'(?!})',
+                            f'<span style="color: #0078D7; font-weight: bold; font-size:14pt;">{term}</span>',
+                            result,
+                            flags=re.IGNORECASE
+                        )
 
-                # placeholder 복원
-                for k, v in placeholder_map.items():
-                    temp_display = temp_display.replace(k, v)
-
-                return temp_display
+                print(f"[DEBUG] Final result: {result}")
+                return result
 
             # search_info 만들기
             search_info = ""
