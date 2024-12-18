@@ -29,19 +29,19 @@ class FileTableWidget(QWidget):
         self.table_view.setModel(SQLiteTableModel([], []))
 
         # 오른쪽 위젯 (추가로 필요한 내용이 있다면 여기서 구성)
-        self.right_widget = QWidget()
-        self.right_layout = QVBoxLayout(self.right_widget)
+        # self.right_widget = QWidget()
+        # self.right_layout = QVBoxLayout(self.right_widget)
 
         # 예시로 파일 상세 정보를 표시하는 QTextEdit 추가
         self.detail_viewer = QTextEdit()
         self.detail_viewer.setReadOnly(True)
         self.detail_viewer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.right_layout.addWidget(self.detail_viewer)
+        # self.right_layout.addWidget(self.detail_viewer)
 
-        self.splitter.addWidget(self.right_widget)
+        # self.splitter.addWidget(self.right_widget)
 
         # 테이블 셀 클릭 시 상세 정보 업데이트
-        self.table_view.selectionModel().selectionChanged.connect(self.update_detail_view)
+        # self.table_view.selectionModel().selectionChanged.connect(self.update_detail_view)
 
     def set_db_path(self, db_path):
         """DB 경로 설정 및 데이터 로드"""
@@ -75,13 +75,13 @@ class FileTableWidget(QWidget):
         else:
             self.table_view.setModel(None)
 
-    def update_detail_view(self, selected, deselected):
-        for index in selected.indexes():
-            row = index.row()
-            data = []
-            for column in range(self.table_view.model().columnCount()):
-                item = self.table_view.model().index(row, column).data()
-                header = self.table_view.model().headerData(column, Qt.Horizontal)
-                data.append(f"<b>{header}:</b> {item}")
-            self.detail_viewer.setHtml("<br>".join(data))
-            break
+    # def update_detail_view(self, selected, deselected):
+    #     for index in selected.indexes():
+    #         row = index.row()
+    #         data = []
+    #         for column in range(self.table_view.model().columnCount()):
+    #             item = self.table_view.model().index(row, column).data()
+    #             header = self.table_view.model().headerData(column, Qt.Horizontal)
+    #             data.append(f"<b>{header}:</b> {item}")
+    #         self.detail_viewer.setHtml("<br>".join(data))
+    #         break
