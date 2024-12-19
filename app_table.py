@@ -116,6 +116,14 @@ class AppTableWidget(QWidget):
         if self.current_mode == 'target':  # 대상 PC 모드에서만 복사 및 파싱
             recall_load_dir = os.path.join(os.path.expanduser("~"), "Desktop", "Recall_load")
             self.copy_srum_files_and_backup(recall_load_dir)
+            
+            # Prefetch 데이터 로드 추가
+            prefetch_dir = os.path.join(recall_load_dir, "Prefetch_Data")
+            if os.path.exists(prefetch_dir):
+                print(f"[DEBUG] Target 모드에서 Prefetch 데이터 로드 시작: {prefetch_dir}")
+                self.load_prefetch_data(prefetch_dir)
+            else:
+                print(f"[DEBUG] Prefetch 디렉토리를 찾을 수 없습니다: {prefetch_dir}")
 
     def load_app_data(self):
         data, headers = load_app_data_from_db(self.db_path)

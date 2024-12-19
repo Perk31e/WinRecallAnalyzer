@@ -235,10 +235,8 @@ class MainWindow(QMainWindow):
             recent_destination = os.path.join(recall_load_dir, "Recent_Artifact")
 
             if os.path.exists(recent_folder):
-                if os.path.exists(recent_destination):
-                    print(f"대상 폴더 {recent_destination} 이미 존재, 기존 폴더 삭제")
-                    shutil.rmtree(recent_destination)  # 기존 폴더 삭제
-                shutil.copytree(recent_folder, recent_destination)  # Recent 폴더 복사
+                # 기존 폴더 삭제 없이 복사
+                shutil.copytree(recent_folder, recent_destination, dirs_exist_ok=True)  #
                 print(f"Recent 폴더 복사 완료: {recent_destination}")
             else:
                 print(f"Recent 폴더를 찾을 수 없습니다: {recent_folder}")
@@ -255,6 +253,28 @@ class MainWindow(QMainWindow):
                 print("WebTableWidget이 초기화되지 않았거나 copy_history_files 함수가 존재하지 않습니다.")
         except Exception as e:
             print(f"브라우저 히스토리 파일 복사 중 오류 발생: {e}")
+
+        # Prefetch 파일 복사 추가
+        try:
+            prefetch_src = r"C:\Windows\Prefetch"
+            prefetch_dst = os.path.join(recall_load_dir, "Prefetch_Data")
+            
+            if not os.path.exists(prefetch_dst):
+                os.makedirs(prefetch_dst)
+                
+            # Prefetch 파일 복사
+            copied_count = 0
+            for file in os.listdir(prefetch_src):
+                if file.endswith('.pf'):
+                    src_file = os.path.join(prefetch_src, file)
+                    dst_file = os.path.join(prefetch_dst, file)
+                    try:
+                        shutil.copy2(src_file, dst_file)
+                        copied_count += 1
+                    except Exception as e:
+                        print(f"Prefetch 파일 복사 중 오류 발생: {e}")
+        except Exception as e:
+            print(f"Prefetch 파일 처리 중 오류 발생: {e}")
 
         # SRUM 및 SOFTWARE 파일 복사
         try:
@@ -921,7 +941,6 @@ class MainWindow(QMainWindow):
                         except Exception as e:
                             print(f"Prefetch 파일 복사 중 오류 발생: {e}")
 
-                print(f"Prefetch 파일이 {prefetch_dst}로 복사되었습니다.")
                 self.analyze_prefetch_data(prefetch_dst)
 
             except Exception as e:
