@@ -232,7 +232,7 @@ class MainWindow(QMainWindow):
         # Recent 폴더 복사 추가
         try:
             recent_folder = os.path.join(os.environ['USERPROFILE'], 'AppData\\Roaming\\Microsoft\\Windows\\Recent')
-            recent_destination = os.path.join(recall_load_dir, "RA")
+            recent_destination = os.path.join(recall_load_dir, "Recent_Artifact")
 
             if os.path.exists(recent_folder):
                 if os.path.exists(recent_destination):
@@ -266,7 +266,7 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f"SRUM 및 SOFTWARE 파일 복사 중 오류 발생: {e}")
 
-        # ukg.db 파일 복사
+        # ukg.db 파일 복사 및 ImageStore 복사 추가
         try:
             user_path = os.path.expanduser("~")
             ukp_folder_path = os.path.join(user_path, r"AppData\Local\CoreAIPlatform.00\UKP")
@@ -285,8 +285,23 @@ class MainWindow(QMainWindow):
                 print(f"ukg.db 파일 복사 완료: {ukg_db_destination}")
             else:
                 print("ukg.db 파일을 찾을 수 없습니다.")
+
+            # ImageStore 폴더 복사
+            for folder in guid_folders:
+                image_store_path = os.path.join(folder, "ImageStore")
+                if os.path.exists(image_store_path):
+                    image_store_destination = os.path.join(recall_load_dir, "ImageStore")
+                    if os.path.exists(image_store_destination):
+                        print(f"ImageStore 폴더 이미 존재, 기존 폴더 삭제")
+                        shutil.rmtree(image_store_destination)  # 기존 폴더 삭제
+                    shutil.copytree(image_store_path, image_store_destination)
+                    print(f"ImageStore 폴더 복사 완료: {image_store_destination}")
+                    break
+            else:
+                print("ImageStore 폴더를 찾을 수 없습니다.")
+
         except Exception as e:
-            print(f"ukg.db 파일 복사 중 오류 발생: {e}")
+            print(f"ukg.db 또는 ImageStore 복사 중 오류 발생: {e}")
 
         # ukg.db-wal 파일 복사 및 이름 변경
         try:
