@@ -941,13 +941,34 @@ class InternalAuditWidget(QWidget):
             print(f"[DEBUG][show_ocr_content] 최종 processed_search: '{processed_search}'")
             # 실제 하이라이트할 검색어들 추출
             def extract_search_terms(search_str):
-                # 연산자와 괄호를 개행으로 치환
+                """검색어 추출 함수"""
                 print(f"[DEBUG][extract_search_terms] raw search_str = '{search_str}'")
-                temp = re.sub(r'(\|\||&&|==|\(|\))', '\n', search_str)
-                # 개행 기준으로 split
-                lines = [line.strip() for line in temp.split('\n') if line.strip()]
-                print(f"[DEBUG][extract_search_terms] parsedlines = {lines}")
-                return lines
+                
+                # == 연산자를 포함한 패턴을 먼저 처리
+                eq_patterns = re.finditer(r'(%\w+%)\s*==\s*(\S+)', search_str)
+                terms = []
+                processed_parts = set()
+                
+                # == 연산자가 있는 부분 처리
+                for match in eq_patterns:
+                    full_term = match.group(0)
+                    right_term = match.group(2)
+                    processed_parts.add(full_term)
+                    if not (right_term.startswith('%') and right_term.endswith('%')):
+                        terms.append(right_term)
+                
+                # 나머지 부분 처리
+                remaining_text = search_str
+                for part in processed_parts:
+                    remaining_text = remaining_text.replace(part, '')
+                
+                # 남은 텍스트에서 추가 검색어 추출
+                if remaining_text.strip():
+                    additional_terms = re.split(r'\s*(?:\|\||\&\&)\s*', remaining_text.strip())
+                    terms.extend(term.strip() for term in additional_terms if term.strip())
+                
+                print(f"[DEBUG][extract_search_terms] parsedlines = {terms}")
+                return terms
 
             highlight_terms = extract_search_terms(processed_search)
             print(f"[DEBUG][show_ocr_content] highlight_terms = {highlight_terms}")
@@ -1065,7 +1086,6 @@ class InternalAuditWidget(QWidget):
                                     f'== <span style="color: #0078D7; font-weight: bold; font-size:14pt;">{right}</span>',
                                     result
                                 )
-                
                 # NOT 영향을 받는 일반 단어들 빨간색으로 처리
                 for term in not_affected_terms:
                     if term != '!!':  # !! 연산자 제외
