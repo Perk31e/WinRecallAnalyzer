@@ -67,6 +67,11 @@ class MainWindow(QMainWindow):
             self.open_additional_files_dialog)  # open_history_file_dialog -> open_additional_files_dialog로 변경
         file_menu.addAction(open_history_action)
 
+        # "Prefetch 열기" 메뉴 항목 추가
+        open_prefetch_action = QAction("Prefetch 열기", self)
+        open_prefetch_action.triggered.connect(self.open_prefetch_directory_dialog)
+        file_menu.addAction(open_prefetch_action)        
+
         # "SRUM 열기" 메뉴 항목 추가
         open_srum_action = QAction("SRUM 열기", self)
         open_srum_action.triggered.connect(self.open_srum_files_dialog)
@@ -566,6 +571,13 @@ class MainWindow(QMainWindow):
             if hasattr(self.internal_audit_tab, 'set_db_path'):
                 self.internal_audit_tab.set_db_path(self.db_path)
 
+            # Prefetch 데이터 로드 실행
+            print("Prefetch 데이터 로드를 시작합니다.")
+            if hasattr(self.app_table_tab, 'load_prefetch_data'):
+                self.app_table_tab.load_prefetch_data()
+            else:
+                print("[DEBUG] load_prefetch_data 메서드가 존재하지 않습니다.")
+
             # 대상 PC 모드에서 히스토리 파일 경로 설정
             if self.current_mode == 'target':
                 chrome_history_path = os.path.join(desktop_path, "Recall_load", "Browser_History", "Chrome_History")
@@ -692,6 +704,23 @@ class MainWindow(QMainWindow):
             else:
                 print("히스토리 파일 선택이 건너뛰어졌습니다.")
 
+            # Prefetch 디렉토리 선택
+            prefetch_dir = QFileDialog.getExistingDirectory(
+                self,
+                "Prefetch 디렉토리 선택",
+                desktop_path,
+                QFileDialog.ShowDirsOnly
+            )
+
+            if prefetch_dir:
+                print(f"선택된 Prefetch 디렉토리: {prefetch_dir}")
+                if hasattr(self.app_table_tab, 'load_prefetch_data'):
+                    self.app_table_tab.load_prefetch_data(prefetch_dir)
+                else:
+                    print("[DEBUG] load_prefetch_data 메서드가 존재하지 않습니다.")
+            else:
+                print("Prefetch 디렉토리 선택이 건너뛰어졌습니다.")                
+
             # SRUDB.dat 파일 선택
             srudb_file = self.open_file("SRUDB.dat 파일 선택", desktop_path, "All Files (*)")
             if srudb_file:
@@ -723,13 +752,6 @@ class MainWindow(QMainWindow):
                     print("[DEBUG] app_table_tab에 analyze_srum_data_for_analysis_mode 메서드가 없습니다.")
             else:
                 print("SRUDB.dat 또는 SOFTWARE 파일이 누락되었습니다. 분석을 진행할 수 없습니다.")
-
-            # Prefetch 데이터 로드 실행 (SRUM 분석 여부와 상관없이 실행)
-            print("Prefetch 데이터 로드를 시작합니다.")
-            if hasattr(self, 'load_prefetch_data'):
-                self.app_table_tab.load_prefetch_data()
-            else:
-                print("[DEBUG] load_prefetch_data 메서드가 존재하지 않습니다.")
 
         except Exception as e:
             print(f"open_additional_files_dialog에서 예외 발생: {e}")
@@ -845,6 +867,57 @@ class MainWindow(QMainWindow):
     def filter_table(self):
         filter_text = self.search_input.text()
         self.proxy_model.setFilterWildcard(f"*{filter_text}*")
+
+    def open_prefetch_directory_dialog(self):
+        """Prefetch 디렉토리 선택 다이얼로그"""
+        if self.current_mode == 'target':
+            # 대상 PC 모드에서는 자동으로 Prefetch 디렉토리 설정
+            prefetch_src = r"C:\Windows\Prefetch"
+            desktop_path = os.path.expanduser("~\\Desktop")
+            prefetch_dst = os.path.join(desktop_path, "Recall_load", "Prefetch_Data")
+            
+            if not os.path.exists(prefetch_dst):
+                os.makedirs(prefetch_dst)
+            
+            try:
+                # Prefetch 파일 복사
+                for file in os.listdir(prefetch_src):
+                    if file.endswith('.pf'):
+                        src_file = os.path.join(prefetch_src, file)
+                        dst_file = os.path.join(prefetch_dst, file)
+                        try:
+                            shutil.copy2(src_file, dst_file)
+                        except Exception as e:
+                            print(f"Prefetch 파일 복사 중 오류 발생: {e}")
+                
+                print(f"Prefetch 파일이 {prefetch_dst}로 복사되었습니다.")
+                self.analyze_prefetch_data(prefetch_dst)
+                
+            except Exception as e:
+                print(f"Prefetch 파일 처리 중 오류 발생: {e}")
+                QMessageBox.warning(self, "오류", f"Prefetch 파일 처리 중 오류가 발생했습니다: {e}")
+                
+        else:
+            # 분석 PC 모드에서는 사용자가 디렉토리 선택
+            prefetch_dir = QFileDialog.getExistingDirectory(
+                self,
+                "Prefetch 디렉토리 선택",
+                os.path.expanduser("~"),
+                QFileDialog.ShowDirsOnly
+            )
+            
+            if prefetch_dir:
+                print(f"선택된 Prefetch 디렉토리: {prefetch_dir}")
+                self.analyze_prefetch_data(prefetch_dir)
+            else:
+                print("Prefetch 디렉토리가 선택되지 않았습니다.")
+
+    def analyze_prefetch_data(self, prefetch_dir):
+        """Prefetch 데이터 분석"""
+        if hasattr(self.app_table_tab, 'load_prefetch_data'):
+            self.app_table_tab.load_prefetch_data(prefetch_dir)
+        else:
+            print("[DEBUG] load_prefetch_data 메서드가 존재하지 않습니다.")
 
 if __name__ == "__main__":
     try:

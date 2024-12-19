@@ -9,7 +9,7 @@ import pytz
 from ctypes import wintypes
 import pandas as pd
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QTableView, QLabel, QTextEdit, QSplitter, QHeaderView, QStyledItemDelegate
-from PySide6.QtCore import Qt, QAbstractTableModel
+from PySide6.QtCore import Qt, QAbstractTableModel, QThread, Signal
 from database import SQLiteTableModel, load_app_data_from_db
 
 
@@ -64,6 +64,7 @@ class AppTableWidget(QWidget):
         self.srudb_path = None  # 초기화 추가
         self.software_path = None  # 초기화 추가
         self.foreground_cycle_time_data = None
+        self.prefetch_data = None  # 추가
         self.setup_ui()
 
     def setup_ui(self):
@@ -168,7 +169,29 @@ class AppTableWidget(QWidget):
                 app_path = model.data(model.index(row, 2))  # Path 열
                 app_time = model.data(model.index(row, 5))  # TimeStamp 열
                 print(f"[DEBUG] 선택된 테이블 데이터 - Path: {app_path}, TimeStamp: {app_time}")
-
+                # 파일명 추출
+                app_name = os.path.basename(app_path)
+                print(f"[DEBUG] 추출된 파일명: {app_name}")
+                # Prefetch 데이터가 있고 비어있지 않은 경우에만 필터링
+                if hasattr(self, 'prefetch_data') and not self.prefetch_data.empty:
+                    # 파일명과 일치하는 Prefetch 데이터 필터링
+                    matching_prefetch = self.prefetch_data[
+                        self.prefetch_data['ExecutableName'].str.contains(app_name, case=False, na=False)
+                    ]
+                    if not matching_prefetch.empty:
+                        # text_box1에 매칭된 Prefetch 데이터만 표시
+                        prefetch_info = []
+                        for _, row in matching_prefetch.iterrows():
+                            prefetch_info.append(f"실행 파일: {row['ExecutableName']}")
+                            prefetch_info.append(f"마지막 실행: {row['LastRun']}")
+                            prefetch_info.append(f"로드된 파일: {row['FilesLoaded']}")
+                            prefetch_info.append("-" * 50)  # 구분선
+                        
+                        self.text_box1.setText("\n".join(prefetch_info))
+                        print(f"[DEBUG] {app_name}에 대한 Prefetch 데이터 표시 완료")
+                    else:
+                        self.text_box1.setText(f"'{app_name}'에 대한 Prefetch 데이터가 없습니다.")
+                        print(f"[DEBUG] {app_name}에 대한 Prefetch 데이터 없음")
                 # SRUM 데이터와 비교
                 if hasattr(self, 'csv_data') and self.csv_data is not None:
                     srum_data = self.get_srum_related_data(app_path, app_time)
@@ -430,3 +453,183 @@ class AppTableWidget(QWidget):
 
         except Exception as e:
             print(f"SrumECmd 실행 중 오류 발생: {e}")
+
+    def load_prefetch_data(self, prefetch_dir=None):
+        """Prefetch 파일 로드 및 분석"""
+        try:
+            if not prefetch_dir:
+                print("Prefetch 디렉토리가 지정되지 않았습니다.")
+                return
+                # PECmd 실행 파일 경로 확인
+            pecmd_path = os.path.join(os.getcwd(), "PECmd.exe")
+            if not os.path.exists(pecmd_path):
+                print("PECmd.exe가 현재 디렉토리에 없습니다.")
+                return
+                # 현재 작업 디렉토리에 결과 저장
+            pecmd_dir = os.getcwd()
+            output_csv = os.path.join(pecmd_dir, "prefetch_result.csv")
+            timeline_csv = os.path.join(pecmd_dir, "prefetch_result_Timeline.csv")
+            
+            # 기존 CSV 파일 제거
+            if os.path.exists(output_csv):
+                os.remove(output_csv)
+            if os.path.exists(timeline_csv):
+                os.remove(timeline_csv)
+                print(f"[DEBUG] Prefetch 분석 결과 저장 경로: {output_csv}")
+            
+                # PECmd 분석 스레드 생성 및 시작
+            self.prefetch_analyzer = PrefetchAnalyzer(pecmd_path, prefetch_dir, pecmd_dir)
+            self.prefetch_analyzer.finished.connect(self.on_prefetch_analysis_complete)
+            self.prefetch_analyzer.start()
+        except Exception as e:
+           print(f"Prefetch 데이터 로드 중 오류 발생: {e}")
+
+    def on_prefetch_analysis_complete(self, success, message):
+       """Prefetch 분석이 완료되면 호출되는 콜백"""
+       print(f"[DEBUG] Prefetch 분석 완료: {message}")  # 디버그 메시지 추가
+       if success:
+           try:
+               output_csv = os.path.join(os.getcwd(), "prefetch_result.csv")
+               if os.path.exists(output_csv):
+                   df = pd.read_csv(output_csv)
+                   self.prefetch_data = df[['ExecutableName', 'LastRun', 'FilesLoaded']]
+                   
+                   # text_box1에 Prefetch 데이터 표시
+                   prefetch_info = []
+                   for _, row in self.prefetch_data.iterrows():
+                       prefetch_info.append(f"실행 파일: {row['ExecutableName']}")
+                       prefetch_info.append(f"마지막 실행: {row['LastRun']}")
+                       prefetch_info.append(f"로드된 파일: {row['FilesLoaded']}")
+                       prefetch_info.append("-" * 50)  # 구분선
+                   
+                   self.text_box1.setText("\n".join(prefetch_info))
+                   print("[DEBUG] Prefetch 데이터를 text_box1에 표시 완료")
+               else:
+                   error_msg = "Prefetch 분석 결과 파일을 찾을 수 없습니다."
+                   print(f"[DEBUG] {error_msg}")
+                   self.text_box1.setText(error_msg)
+           except Exception as e:
+               error_msg = f"결과 처리 중 오류 발생: {e}"
+               print(f"[DEBUG] {error_msg}")
+               self.text_box1.setText(error_msg)
+       else:
+           error_msg = f"Prefetch 분석 실패: {message}"
+           print(f"[DEBUG] {error_msg}")
+           self.text_box1.setText(error_msg) 
+            
+    def create_prefetch_summary(self):
+        """Prefetch 데이터 요약 생성"""
+        if self.prefetch_data is None or self.prefetch_data.empty:
+            return "Prefetch 데이터가 없습니다."
+        try:
+            # 전체 Prefetch 파일 수
+            total_files = len(self.prefetch_data)
+            
+            # 실행 횟수 기준 상위 10개 프로그램
+            top_programs = self.prefetch_data.nlargest(10, 'Run Count')
+            
+            # 최근 실행된 순서로 정렬
+            recent_runs = self.prefetch_data.sort_values('Last Run Time', ascending=False).head(10)
+            summary = f"[Prefetch 분석 결과]\n\n"
+            summary += f"총 Prefetch 파일 수: {total_files}\n\n"
+            
+            summary += "자주 실행된 프로그램 (상위 10개):\n"
+            summary += "-" * 50 + "\n"
+            for _, row in top_programs.iterrows():
+                summary += f"프로그램: {row['Filename']}\n"
+                summary += f"실행 횟수: {row['Run Count']}\n"
+                summary += f"마지막 실행: {row['Last Run Time']}\n"
+                summary += "-" * 50 + "\n"
+            
+            summary += "\n최근 실행된 프로그램 (상위 10개):\n"
+            summary += "-" * 50 + "\n"
+            for _, row in recent_runs.iterrows():
+                summary += f"프로그램: {row['Filename']}\n"
+                summary += f"실행 시각: {row['Last Run Time']}\n"
+                summary += f"실행 횟수: {row['Run Count']}\n"
+                summary += "-" * 50 + "\n"
+                return summary
+        except Exception as e:
+            return f"요약 생성 중 오류 발생: {e}"
+
+    def update_prefetch_info(self):
+        """선택된 항목의 Prefetch 정보를 UI에 표시"""
+        if self.prefetch_data is not None and not self.prefetch_data.empty:
+            selected_indexes = self.table_view.selectionModel().selectedIndexes()
+            if selected_indexes:
+                row = selected_indexes[0].row()
+                model = self.table_view.model()
+                if model:
+                    app_path = model.data(model.index(row, 2))  # Path 열
+                    app_name = os.path.basename(app_path)
+                    
+                    # Prefetch 데이터에서 관련 정보 찾기
+                    matching_prefetch = self.prefetch_data[
+                        self.prefetch_data['Filename'].str.contains(app_name, case=False, na=False)
+                    ]
+                    
+                    if not matching_prefetch.empty:
+                        prefetch_info = (
+                            f"선택된 프로그램의 Prefetch 정보:\n"
+                            f"실행 횟수: {matching_prefetch['Run Count'].iloc[0]}\n"
+                            f"마지막 실행: {matching_prefetch['Last Run Time'].iloc[0]}\n"
+                            f"생성 시간: {matching_prefetch['Created Time'].iloc[0]}"
+                        )
+                        self.text_box3.setText(prefetch_info)
+                    else:
+                        self.text_box3.setText("선택된 프로그램의 Prefetch 데이터가 없습니다.")
+
+class PrefetchAnalyzer(QThread):
+    finished = Signal(bool, str)
+    def __init__(self, pecmd_path, prefetch_dir, pecmd_dir):
+        super().__init__()
+        self.pecmd_path = pecmd_path
+        self.prefetch_dir = prefetch_dir
+        self.pecmd_dir = pecmd_dir
+    def run(self):
+        try:
+            command = [
+                self.pecmd_path,
+                "-d", self.prefetch_dir,
+                "--csv", self.pecmd_dir,
+                "--csvf", "prefetch_result.csv"
+            ]
+            
+            print(f"[DEBUG] 실행할 명령어: {' '.join(command)}")
+            
+            process = subprocess.Popen(
+                command,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            
+            process.wait()
+            
+            stderr = process.stderr.read()
+            if stderr:
+                print(f"[PECmd Error] {stderr}")
+                
+            return_code = process.poll()
+            if return_code == 0:
+                print("[DEBUG] PECmd 실행 성공")
+                
+                # CSV 파일 수정 - UTC+9 적용
+                csv_path = os.path.join(self.pecmd_dir, "prefetch_result.csv")
+                if os.path.exists(csv_path):
+                    df = pd.read_csv(csv_path)
+                    if "LastRun" in df.columns:  # Last Run Time 컬럼이 있는지 확인
+                        # UTC+9 적용
+                        df["LastRun"] = pd.to_datetime(df["LastRun"]).dt.tz_localize('UTC').dt.tz_convert('Asia/Seoul').dt.strftime('%Y-%m-%d %H:%M:%S')
+                        # 수정된 데이터 저장
+                        df.to_csv(csv_path, index=False)
+                        print("[DEBUG] CSV 파일의 Last Run Time에 UTC+9 적용 완료")
+                
+                self.finished.emit(True, "Prefetch 분석 완료")
+            else:
+                print(f"[DEBUG] PECmd 실행 실패 (return code: {return_code})")
+                self.finished.emit(False, f"Prefetch 분석 실패 (return code: {return_code})")
+                
+        except Exception as e:
+            print(f"[DEBUG] PECmd 실행 중 예외 발생: {str(e)}")
+            self.finished.emit(False, f"오류 발생: {str(e)}")

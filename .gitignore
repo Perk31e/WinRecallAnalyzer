@@ -36,4 +36,5 @@ remained.db-wal
 Internal_Code_Temp/
 
 # prefetch output file
-prefetch_output.csv
+prefetch_result.csv
+prefetch_result_Timeline.csv
