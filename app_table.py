@@ -186,7 +186,7 @@ class AppTableWidget(QWidget):
                             prefetch_info.append(f"마지막 실행: {row['LastRun']}")
                             prefetch_info.append(f"로드된 파일: {row['FilesLoaded']}")
                             prefetch_info.append("-" * 50)  # 구분선
-                        
+
                         self.text_box1.setText("\n".join(prefetch_info))
                         print(f"[DEBUG] {app_name}에 대한 Prefetch 데이터 표시 완료")
                     else:
@@ -469,14 +469,14 @@ class AppTableWidget(QWidget):
             pecmd_dir = os.getcwd()
             output_csv = os.path.join(pecmd_dir, "prefetch_result.csv")
             timeline_csv = os.path.join(pecmd_dir, "prefetch_result_Timeline.csv")
-            
+
             # 기존 CSV 파일 제거
             if os.path.exists(output_csv):
                 os.remove(output_csv)
             if os.path.exists(timeline_csv):
                 os.remove(timeline_csv)
                 print(f"[DEBUG] Prefetch 분석 결과 저장 경로: {output_csv}")
-            
+
                 # PECmd 분석 스레드 생성 및 시작
             self.prefetch_analyzer = PrefetchAnalyzer(pecmd_path, prefetch_dir, pecmd_dir)
             self.prefetch_analyzer.finished.connect(self.on_prefetch_analysis_complete)
@@ -493,7 +493,7 @@ class AppTableWidget(QWidget):
                if os.path.exists(output_csv):
                    df = pd.read_csv(output_csv)
                    self.prefetch_data = df[['ExecutableName', 'LastRun', 'FilesLoaded']]
-                   
+
                    # text_box1에 Prefetch 데이터 표시
                    prefetch_info = []
                    for _, row in self.prefetch_data.iterrows():
@@ -501,7 +501,7 @@ class AppTableWidget(QWidget):
                        prefetch_info.append(f"마지막 실행: {row['LastRun']}")
                        prefetch_info.append(f"로드된 파일: {row['FilesLoaded']}")
                        prefetch_info.append("-" * 50)  # 구분선
-                   
+
                    self.text_box1.setText("\n".join(prefetch_info))
                    print("[DEBUG] Prefetch 데이터를 text_box1에 표시 완료")
                else:
@@ -515,8 +515,8 @@ class AppTableWidget(QWidget):
        else:
            error_msg = f"Prefetch 분석 실패: {message}"
            print(f"[DEBUG] {error_msg}")
-           self.text_box1.setText(error_msg) 
-            
+           self.text_box1.setText(error_msg)
+
     def create_prefetch_summary(self):
         """Prefetch 데이터 요약 생성"""
         if self.prefetch_data is None or self.prefetch_data.empty:
@@ -524,15 +524,15 @@ class AppTableWidget(QWidget):
         try:
             # 전체 Prefetch 파일 수
             total_files = len(self.prefetch_data)
-            
+
             # 실행 횟수 기준 상위 10개 프로그램
             top_programs = self.prefetch_data.nlargest(10, 'Run Count')
-            
+
             # 최근 실행된 순서로 정렬
             recent_runs = self.prefetch_data.sort_values('Last Run Time', ascending=False).head(10)
             summary = f"[Prefetch 분석 결과]\n\n"
             summary += f"총 Prefetch 파일 수: {total_files}\n\n"
-            
+
             summary += "자주 실행된 프로그램 (상위 10개):\n"
             summary += "-" * 50 + "\n"
             for _, row in top_programs.iterrows():
@@ -540,7 +540,7 @@ class AppTableWidget(QWidget):
                 summary += f"실행 횟수: {row['Run Count']}\n"
                 summary += f"마지막 실행: {row['Last Run Time']}\n"
                 summary += "-" * 50 + "\n"
-            
+
             summary += "\n최근 실행된 프로그램 (상위 10개):\n"
             summary += "-" * 50 + "\n"
             for _, row in recent_runs.iterrows():
@@ -562,12 +562,12 @@ class AppTableWidget(QWidget):
                 if model:
                     app_path = model.data(model.index(row, 2))  # Path 열
                     app_name = os.path.basename(app_path)
-                    
+
                     # Prefetch 데이터에서 관련 정보 찾기
                     matching_prefetch = self.prefetch_data[
                         self.prefetch_data['Filename'].str.contains(app_name, case=False, na=False)
                     ]
-                    
+
                     if not matching_prefetch.empty:
                         prefetch_info = (
                             f"선택된 프로그램의 Prefetch 정보:\n"
@@ -594,26 +594,26 @@ class PrefetchAnalyzer(QThread):
                 "--csv", self.pecmd_dir,
                 "--csvf", "prefetch_result.csv"
             ]
-            
+
             print(f"[DEBUG] 실행할 명령어: {' '.join(command)}")
-            
+
             process = subprocess.Popen(
                 command,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
                 text=True
             )
-            
+
             process.wait()
-            
+
             stderr = process.stderr.read()
             if stderr:
                 print(f"[PECmd Error] {stderr}")
-                
+
             return_code = process.poll()
             if return_code == 0:
                 print("[DEBUG] PECmd 실행 성공")
-                
+
                 # CSV 파일 수정 - UTC+9 적용
                 csv_path = os.path.join(self.pecmd_dir, "prefetch_result.csv")
                 if os.path.exists(csv_path):
@@ -624,12 +624,12 @@ class PrefetchAnalyzer(QThread):
                         # 수정된 데이터 저장
                         df.to_csv(csv_path, index=False)
                         print("[DEBUG] CSV 파일의 Last Run Time에 UTC+9 적용 완료")
-                
+
                 self.finished.emit(True, "Prefetch 분석 완료")
             else:
                 print(f"[DEBUG] PECmd 실행 실패 (return code: {return_code})")
                 self.finished.emit(False, f"Prefetch 분석 실패 (return code: {return_code})")
-                
+
         except Exception as e:
             print(f"[DEBUG] PECmd 실행 중 예외 발생: {str(e)}")
             self.finished.emit(False, f"오류 발생: {str(e)}")

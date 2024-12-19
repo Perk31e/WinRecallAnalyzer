@@ -70,7 +70,7 @@ class MainWindow(QMainWindow):
         # "Prefetch 열기" 메뉴 항목 추가
         open_prefetch_action = QAction("Prefetch 열기", self)
         open_prefetch_action.triggered.connect(self.open_prefetch_directory_dialog)
-        file_menu.addAction(open_prefetch_action)        
+        file_menu.addAction(open_prefetch_action)
 
         # "SRUM 열기" 메뉴 항목 추가
         open_srum_action = QAction("SRUM 열기", self)
@@ -228,6 +228,22 @@ class MainWindow(QMainWindow):
         # Recover_Output 폴더 경로 설정
         output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Recover_Output")
         os.makedirs(output_dir, exist_ok=True)
+
+        # Recent 폴더 복사 추가
+        try:
+            recent_folder = os.path.join(os.environ['USERPROFILE'], 'AppData\\Roaming\\Microsoft\\Windows\\Recent')
+            recent_destination = os.path.join(recall_load_dir, "RA")
+
+            if os.path.exists(recent_folder):
+                if os.path.exists(recent_destination):
+                    print(f"대상 폴더 {recent_destination} 이미 존재, 기존 폴더 삭제")
+                    shutil.rmtree(recent_destination)  # 기존 폴더 삭제
+                shutil.copytree(recent_folder, recent_destination)  # Recent 폴더 복사
+                print(f"Recent 폴더 복사 완료: {recent_destination}")
+            else:
+                print(f"Recent 폴더를 찾을 수 없습니다: {recent_folder}")
+        except Exception as e:
+            print(f"Recent 폴더 복사 중 오류 발생: {e}")
 
         # 브라우저 히스토리 파일 복사
         try:
@@ -719,7 +735,7 @@ class MainWindow(QMainWindow):
                 else:
                     print("[DEBUG] load_prefetch_data 메서드가 존재하지 않습니다.")
             else:
-                print("Prefetch 디렉토리 선택이 건너뛰어졌습니다.")                
+                print("Prefetch 디렉토리 선택이 건너뛰어졌습니다.")
 
             # SRUDB.dat 파일 선택
             srudb_file = self.open_file("SRUDB.dat 파일 선택", desktop_path, "All Files (*)")
@@ -733,7 +749,7 @@ class MainWindow(QMainWindow):
                 return  # SRUDB 파일 없으면 분석 중단
 
             # SOFTWARE 파일 선택
-            software_file, _ = self.open_file("SOFTWARE 파일 선택", desktop_path, "All Files (*)")
+            software_file = self.open_file("SOFTWARE 파일 선택", desktop_path, "All Files (*)")
             if software_file:
                 self.software_path = software_file
                 print(f"SOFTWARE 파일이 선택되었습니다: {self.software_path}")
@@ -875,10 +891,10 @@ class MainWindow(QMainWindow):
             prefetch_src = r"C:\Windows\Prefetch"
             desktop_path = os.path.expanduser("~\\Desktop")
             prefetch_dst = os.path.join(desktop_path, "Recall_load", "Prefetch_Data")
-            
+
             if not os.path.exists(prefetch_dst):
                 os.makedirs(prefetch_dst)
-            
+
             try:
                 # Prefetch 파일 복사
                 for file in os.listdir(prefetch_src):
@@ -889,14 +905,14 @@ class MainWindow(QMainWindow):
                             shutil.copy2(src_file, dst_file)
                         except Exception as e:
                             print(f"Prefetch 파일 복사 중 오류 발생: {e}")
-                
+
                 print(f"Prefetch 파일이 {prefetch_dst}로 복사되었습니다.")
                 self.analyze_prefetch_data(prefetch_dst)
-                
+
             except Exception as e:
                 print(f"Prefetch 파일 처리 중 오류 발생: {e}")
                 QMessageBox.warning(self, "오류", f"Prefetch 파일 처리 중 오류가 발생했습니다: {e}")
-                
+
         else:
             # 분석 PC 모드에서는 사용자가 디렉토리 선택
             prefetch_dir = QFileDialog.getExistingDirectory(
@@ -905,7 +921,7 @@ class MainWindow(QMainWindow):
                 os.path.expanduser("~"),
                 QFileDialog.ShowDirsOnly
             )
-            
+
             if prefetch_dir:
                 print(f"선택된 Prefetch 디렉토리: {prefetch_dir}")
                 self.analyze_prefetch_data(prefetch_dir)
