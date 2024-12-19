@@ -944,9 +944,11 @@ class InternalAuditWidget(QWidget):
                 """검색어 추출 함수"""
                 print(f"[DEBUG][extract_search_terms] raw search_str = '{search_str}'")
                 
+                # 전체 검색어를 그대로 리스트에 포함
+                terms = [search_str]
+                
                 # == 연산자를 포함한 패턴을 먼저 처리
                 eq_patterns = re.finditer(r'(%\w+%)\s*==\s*(\S+)', search_str)
-                terms = []
                 processed_parts = set()
                 
                 # == 연산자가 있는 부분 처리
@@ -962,12 +964,26 @@ class InternalAuditWidget(QWidget):
                 for part in processed_parts:
                     remaining_text = remaining_text.replace(part, '')
                 
-                # 남은 텍스트에서 추가 검색어 추출
+                # 괄호 안의 내용을 파싱
                 if remaining_text.strip():
-                    additional_terms = re.split(r'\s*(?:\|\||\&\&)\s*', remaining_text.strip())
-                    terms.extend(term.strip() for term in additional_terms if term.strip())
+                    parts = re.split(r'\s*&&\s*', remaining_text)
+                    for part in parts:
+                        # 괄호 제거
+                        part = part.strip('()')
+                        
+                        # || 연산자로 분리
+                        or_terms = [term.strip() for term in part.split('||')]
+                        
+                        # 각 term에서 괄호와 !! 제거하고 공백 제거
+                        for term in or_terms:
+                            term = term.strip('()')
+                            term = term.strip()
+                            if term.startswith('!!'):
+                                term = term.replace('!!', '').strip()
+                            if term and term not in terms:
+                                terms.append(term)
                 
-                print(f"[DEBUG][extract_search_terms] parsedlines = {terms}")
+                print(f"[DEBUG][extract_search_terms] terms = {terms}")
                 return terms
 
             highlight_terms = extract_search_terms(processed_search)
@@ -1149,20 +1165,31 @@ class InternalAuditWidget(QWidget):
             result = cursor.fetchone()
             conn.close()
 
-            def highlight_text(text, terms):
+            def highlight_text(text, terms, field_type=None):
+                """
+                텍스트 하이라이트 함수
+                field_type: 'Title', 'App', 'Web', 'File', 'OCR' 중 하나
+                """
                 print(f"[DEBUG][highlight_text] text[:100] = '{text[:100] if text else ''}...'") 
                 print(f"[DEBUG][highlight_text] highlight_terms = {terms}")
+                print(f"[DEBUG][highlight_text] field_type = {field_type}")
                 if not text:
+                    # N/A 검색이고 해당 필드에 대한 검색인 경우에만 N/A를 하이라이트
+                    if field_type:
+                        field_pattern = f"%{field_type}% == N/A"
+                        if any(term.lower() == field_pattern.lower() for term in terms):
+                            return '<span style="background-color: yellow; font-weight: bold; font-size:14pt;">N/A</span>'
                     return 'N/A'
                 highlighted = text
-                for t in terms:
-                    pattern = re.escape(t)
-                    highlighted = re.sub(
-                        pattern,
-                        r'<span style="background-color: yellow; font-weight: bold; font-size:14pt;">\g<0></span>',
-                        highlighted,
-                        flags=re.IGNORECASE
-                    )
+                for term in terms:
+                    if not term.lower().endswith('== n/a'):  # N/A 검색이 아닌 일반 검색어만 처리
+                        pattern = re.escape(term)
+                        highlighted = re.sub(
+                            pattern,
+                            r'<span style="background-color: yellow; font-weight: bold; font-size:14pt;">\g<0></span>',
+                            highlighted,
+                            flags=re.IGNORECASE
+                        )
                 return highlighted
 
             if result:
@@ -1176,21 +1203,21 @@ class InternalAuditWidget(QWidget):
                                 
                                 {search_info}
 
-                                <p><b style='font-size: 12pt;'>Window Title:</b> {highlight_text(window_title, highlight_terms) if window_title else 'N/A'}</p>
+                                <p><b style='font-size: 12pt;'>Window Title:</b> {highlight_text(window_title, highlight_terms, 'Title')}</p>
                                 <hr style='border: 1px solid #e0e0e0; margin: 10px 0;'>
 
-                                <p><b style='font-size: 12pt;'>애플리케이션 명:</b> {highlight_text(app_names, highlight_terms) if app_names else 'N/A'}</p>
+                                <p><b style='font-size: 12pt;'>애플리케이션 명:</b> {highlight_text(app_names, highlight_terms, 'App')}</p>
                                 <hr style='border: 1px solid #e0e0e0; margin: 10px 0;'>
 
-                                <p><b style='font-size: 12pt;'>Web Uri:</b> {highlight_text(web_uris, highlight_terms) if web_uris else 'N/A'}</p>
+                                <p><b style='font-size: 12pt;'>Web Uri:</b> {highlight_text(web_uris, highlight_terms, 'Web')}</p>
                                 <hr style='border: 1px solid #e0e0e0; margin: 10px 0;'>
 
-                                <p><b style='font-size: 12pt;'>File Path:</b> {highlight_text(file_paths, highlight_terms) if file_paths else 'N/A'}</p>
+                                <p><b style='font-size: 12pt;'>File Path:</b> {highlight_text(file_paths, highlight_terms, 'File')}</p>
                                 """
 
                 if ocr_text:
                     cleaned_text = self.clean_ocr_text(ocr_text)
-                    highlighted_text = highlight_text(cleaned_text, highlight_terms)
+                    highlighted_text = highlight_text(cleaned_text, highlight_terms, 'OCR')
                     
                     output_text += f"""
                                     <hr style='border: 1px solid #e0e0e0; margin: 10px 0;'>
