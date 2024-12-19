@@ -1113,13 +1113,23 @@ class InternalAuditWidget(QWidget):
 
                 # 나머지 검색어들 파란색으로 처리 (!! 제외)
                 for term in terms:
-                    if term not in not_affected_terms and term != '!!' and term not in eq_left_terms:  # == 연산자의 왼쪽도 제외
-                        result = re.sub(
-                            r'(?<!!)(?<!{)' + re.escape(term) + r'(?!})',
-                            f'<span style="color: #0078D7; font-weight: bold; font-size:14pt;">{term}</span>',
-                            result,
-                            flags=re.IGNORECASE
-                        )
+                    if term not in not_affected_terms and term != '!!' and term not in eq_left_terms:
+                        if 'N/A' in term:
+                            # N/A가 포함된 경우 N/A만 하이라이트
+                            result = re.sub(
+                                r'(?<!!)(?<!{)(N/A)(?!})',
+                                r'<span style="color: #0078D7; font-weight: bold; font-size:14pt;">\1</span>',
+                                result,
+                                flags=re.IGNORECASE
+                            )
+                        else:
+                            # 기존 로직 유지
+                            result = re.sub(
+                                r'(?<!!)(?<!{)' + re.escape(term) + r'(?!})',
+                                f'<span style="color: #0078D7; font-weight: bold; font-size:14pt;">{term}</span>',
+                                result,
+                                flags=re.IGNORECASE
+                            )
 
                 print(f"[DEBUG] Final result: {result}")
                 return result
@@ -1177,7 +1187,7 @@ class InternalAuditWidget(QWidget):
                     # N/A 검색이고 해당 필드에 대한 검색인 경우에만 N/A를 하이라이트
                     if field_type:
                         field_pattern = f"%{field_type}% == N/A"
-                        if any(term.lower() == field_pattern.lower() for term in terms):
+                        if any(term.strip('()').lower() == field_pattern.lower() for term in terms):
                             return '<span style="background-color: yellow; font-weight: bold; font-size:14pt;">N/A</span>'
                     return 'N/A'
                 highlighted = text
