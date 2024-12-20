@@ -16,6 +16,12 @@ You can install all required packages using:
 pip install -r requirements.txt
 ```
 
+- .Net Framework 6.0
+
+```
+you can download from https://dotnet.microsoft.com/en-us/download/dotnet/6.0
+```
+
 ## What is Windows Recall?
 
 <p align="center">
