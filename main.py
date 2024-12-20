@@ -6,9 +6,10 @@ import subprocess
 import shutil
 import glob
 import pandas as pd
+import ctypes
 from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog, QTableView, QVBoxLayout, QWidget, QLabel, \
     QHBoxLayout, QLineEdit, QSplitter, QStatusBar, QStyledItemDelegate, QTabWidget, QTextEdit, QSizePolicy, QMessageBox
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QIcon
 from PySide6.QtCore import Qt, QSortFilterProxyModel
 from database import SQLiteTableModel, load_data_from_db, load_app_data_from_db, load_web_data
 from image_loader import ImageLoaderThread
@@ -41,6 +42,12 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("ReCall DATA Parser")
         self.resize(1800, 900)
+        self.setWindowIcon(QIcon("WinRecallAnalyzer_logo.ico"))
+
+        # Windows 작업 표시줄 아이콘 설정
+        if os.name == 'nt':  # Windows 환경인 경우
+           myappid = 'WinRecallAnalyzer.ReCallDATAParser.1.0'  # 프로그램에 맞는 고유 ID
+           ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 
         # 초기화 변수
         self.db_path = ""  # ukg.db 파일 경로
@@ -1007,6 +1014,13 @@ class MainWindow(QMainWindow):
 if __name__ == "__main__":
     try:
         app = QApplication(sys.argv)
+        app.setWindowIcon(QIcon("WinRecallAnalyzer_logo.ico"))
+
+        # Windows 작업 표시줄 아이콘 설정
+        if os.name == 'nt':  # Windows 환경인 경우
+           myappid = 'WinRecallAnalyzer.ReCallDATAParser.1.0'  # 프로그램에 맞는 고유 ID
+           ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+
         if os.path.exists("style.qss"):
             with open("style.qss", "r", encoding="utf-8") as f:
                 qss = f.read()

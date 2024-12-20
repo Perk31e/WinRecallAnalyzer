@@ -162,6 +162,12 @@ class InternalAuditWidget(QWidget):
         )
         left_layout.addWidget(mail_transfer_button)
 
+        cloud_transfer_button = self.create_preset_button(
+            "클라우드 사용 기록",
+            lambda: self.search_data_transfer("클라우드 및 파일 공유 서비스 사용 기록")
+        )
+        left_layout.addWidget(cloud_transfer_button)
+
         data_transfer_button = self.create_preset_button(
             "자료 송수신 기록", 
             lambda: self.search_data_transfer("자료 송수신 기록")
@@ -173,6 +179,12 @@ class InternalAuditWidget(QWidget):
             lambda: self.search_data_transfer("외장 저장장치 기록")
         )
         left_layout.addWidget(data_transfer_button)
+
+        finance_transfer_button = self.create_preset_button(
+            "금융 활동 기록", 
+            lambda: self.search_data_transfer("금융 활동 기록")
+        )
+        left_layout.addWidget(finance_transfer_button)        
 
         # 왼쪽 레이아웃을 검색 레이아웃에 추가
         search_layout.addLayout(left_layout)
