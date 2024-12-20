@@ -33,7 +33,7 @@ def convert_unix_timestamp(unix_timestamp):
 # Helper function to simplify Title
 def simplify_title(title):
     """
-    Edge 및 Chrome 브라우저 제목에서 주요 정보만 추출하고 공백 문제를 해결
+    Edge, Chrome 및 Whale 브라우저 제목에서 주요 정보만 추출하고 공백 문제를 해결
     """
     if not title:
         return None
@@ -53,10 +53,16 @@ def simplify_title(title):
     # 4. Chrome 브라우저 관련 패턴 제거
     title = re.sub(r" - Chrome$", "", title)  # "- Chrome" 제거
 
-    # 5. 공백과 하이픈 정리
+    # 5. Whale 브라우저 관련 패턴 제거
+    title = re.sub(r" - Whale$", "", title)  # "- Whale" 제거
+    title = re.sub(r" - 프로필 \d+ - Whale$", "", title)  # "- 프로필 Y - Whale" 제거
+    title = re.sub(r"Naver Whale$", "", title)  # 단독 "Naver Whale" 제거
+
+    # 6. 공백과 하이픈 정리
     title = title.strip("- ")  # 양쪽 불필요한 '-'와 공백 제거
 
     return title.strip() if title.strip() else None
+
 
 class CenterAlignedDelegate(QStyledItemDelegate):
     def initStyleOption(self, option, index):
