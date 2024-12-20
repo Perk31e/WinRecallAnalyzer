@@ -708,37 +708,49 @@ class AppTableWidget(QWidget):
            print(f"Prefetch 데이터 로드 중 오류 발생: {e}")
 
     def on_prefetch_analysis_complete(self, success, message):
-       """Prefetch 분석이 완료되면 호출되는 콜백"""
-       print(f"[DEBUG] Prefetch 분석 완료: {message}")  # 디버그 메시지 추가
-       if success:
-           try:
-               output_csv = os.path.join(os.getcwd(), "prefetch_result.csv")
-               if os.path.exists(output_csv):
-                   df = pd.read_csv(output_csv)
-                   self.prefetch_data = df[['ExecutableName', 'LastRun', 'FilesLoaded']]
+        """Prefetch 분석이 완료되면 호출되는 콜백"""
+        print(f"[DEBUG] Prefetch 분석 완료: {message}")  # 디버그 메시지 추가
+        if success:
+            try:
+                output_csv = os.path.join(os.getcwd(), "prefetch_result.csv")
+                if os.path.exists(output_csv):
+                    df = pd.read_csv(output_csv)
 
-                   # text_box1에 Prefetch 데이터 표시
-                   prefetch_info = []
-                   for _, row in self.prefetch_data.iterrows():
-                       prefetch_info.append(f"실행 파일: {row['ExecutableName']}")
-                       prefetch_info.append(f"마지막 실행: {row['LastRun']}")
-                       prefetch_info.append(f"로드된 파일: {row['FilesLoaded']}")
-                       prefetch_info.append("-" * 50)  # 구분선
+                    # FilesLoaded 컬럼의 내용을 줄바꿈으로 분리
+                    def format_files_loaded(files):
+                        if pd.isna(files):  # null 값 처리
+                            return files
+                        return files.replace(", ", ",\n")
+                    
+                    # FilesLoaded 컬럼 수정
+                    df['FilesLoaded'] = df['FilesLoaded'].apply(format_files_loaded)
+                    
+                    # 수정된 데이터 저장
+                    df.to_csv(output_csv, index=False)                   
+                    self.prefetch_data = df[['ExecutableName', 'LastRun', 'FilesLoaded']]
 
-                   self.text_box1.setText("\n".join(prefetch_info))
-                   print("[DEBUG] Prefetch 데이터를 text_box1에 표시 완료")
-               else:
-                   error_msg = "Prefetch 분석 결과 파일을 찾을 수 없습니다."
-                   print(f"[DEBUG] {error_msg}")
-                   self.text_box1.setText(error_msg)
-           except Exception as e:
-               error_msg = f"결과 처리 중 오류 발생: {e}"
-               print(f"[DEBUG] {error_msg}")
-               self.text_box1.setText(error_msg)
-       else:
-           error_msg = f"Prefetch 분석 실패: {message}"
-           print(f"[DEBUG] {error_msg}")
-           self.text_box1.setText(error_msg)
+                    # text_box1에 Prefetch 데이터 표시
+                    prefetch_info = []
+                    for _, row in self.prefetch_data.iterrows():
+                        prefetch_info.append(f"실행 파일: {row['ExecutableName']}")
+                        prefetch_info.append(f"마지막 실행: {row['LastRun']}")
+                        prefetch_info.append(f"로드된 파일: {row['FilesLoaded']}")
+                        prefetch_info.append("-" * 50)  # 구분선
+
+                    self.text_box1.setText("\n".join(prefetch_info))
+                    print("[DEBUG] Prefetch 데이터를 text_box1에 표시 완료")
+                else:
+                    error_msg = "Prefetch 분석 결과 파일을 찾을 수 없습니다."
+                    print(f"[DEBUG] {error_msg}")
+                    self.text_box1.setText(error_msg)
+            except Exception as e:
+                error_msg = f"결과 처리 중 오류 발생: {e}"
+                print(f"[DEBUG] {error_msg}")
+                self.text_box1.setText(error_msg)
+        else:
+            error_msg = f"Prefetch 분석 실패: {message}"
+            print(f"[DEBUG] {error_msg}")
+            self.text_box1.setText(error_msg)
 
     def create_prefetch_summary(self):
         """Prefetch 데이터 요약 생성"""
