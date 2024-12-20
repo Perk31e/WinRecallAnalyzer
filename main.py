@@ -229,19 +229,26 @@ class MainWindow(QMainWindow):
         output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Recover_Output")
         os.makedirs(output_dir, exist_ok=True)
 
-        # Recent 폴더 복사 추가
+        # Recent 폴더 내 .lnk 파일만 복사
         try:
             recent_folder = os.path.join(os.environ['USERPROFILE'], 'AppData\\Roaming\\Microsoft\\Windows\\Recent')
             recent_destination = os.path.join(recall_load_dir, "Recent_Artifact")
 
             if os.path.exists(recent_folder):
-                # 기존 폴더 삭제 없이 복사
-                shutil.copytree(recent_folder, recent_destination, dirs_exist_ok=True)  #
-                print(f"Recent 폴더 복사 완료: {recent_destination}")
+                # Recent 폴더 내 .lnk 파일만 복사
+                if not os.path.exists(recent_destination):
+                    os.makedirs(recent_destination)
+
+                lnk_files = [f for f in os.listdir(recent_folder) if f.endswith('.lnk')]
+                for lnk_file in lnk_files:
+                    src_file = os.path.join(recent_folder, lnk_file)
+                    dst_file = os.path.join(recent_destination, lnk_file)
+                    shutil.copy2(src_file, dst_file)
+                    print(f"[DEBUG] .lnk 파일 복사 완료: {lnk_file}")
             else:
-                print(f"Recent 폴더를 찾을 수 없습니다: {recent_folder}")
+                print(f"[ERROR] Recent 폴더를 찾을 수 없습니다: {recent_folder}")
         except Exception as e:
-            print(f"Recent 폴더 복사 중 오류 발생: {e}")
+            print(f"Recent 폴더의 .lnk 파일 복사 중 오류 발생: {e}")
 
         # 브라우저 히스토리 파일 복사
         try:
@@ -258,10 +265,10 @@ class MainWindow(QMainWindow):
         try:
             prefetch_src = r"C:\Windows\Prefetch"
             prefetch_dst = os.path.join(recall_load_dir, "Prefetch_Data")
-            
+
             if not os.path.exists(prefetch_dst):
                 os.makedirs(prefetch_dst)
-                
+
             # Prefetch 파일 복사
             copied_count = 0
             for file in os.listdir(prefetch_src):
@@ -340,22 +347,6 @@ class MainWindow(QMainWindow):
                 print("ukg.db-wal 파일을 찾을 수 없습니다.")
         except Exception as e:
             print(f"ukg.db-wal 파일 복사 중 오류 발생: {e}")
-
-        # SRUM 데이터 파싱
-        try:
-            self.app_table_tab.srudb_path = os.path.join(recall_load_dir, "SRU_Artifacts", "SRUDB.dat")
-            self.app_table_tab.software_path = os.path.join(recall_load_dir, "SRU_Artifacts", "SOFTWARE")
-
-            if not os.path.exists(self.app_table_tab.srudb_path) or not os.path.exists(
-                    self.app_table_tab.software_path):
-                print("SRUM 파일이 없습니다. SRUM 파싱을 건너뜁니다.")
-                return
-
-            print("SRUM 데이터 파싱 시작")
-            self.app_table_tab.analyze_srum_data_for_analysis_mode()  # run_srum_tool 대체
-            print("SRUM 데이터 파싱 완료")
-        except Exception as e:
-            print(f"SRUM 데이터 파싱 중 오류 발생: {e}")
 
     def open_srum_files_dialog(self):
         """SRUM 파일과 SOFTWARE 파일을 선택하도록 하는 다이얼로그"""
@@ -660,9 +651,53 @@ class MainWindow(QMainWindow):
                 self.web_table_tab.table_view.viewport().update()
                 print("[DEBUG] 테이블 뷰 강제 새로고침 완료.")
 
+                # SRUM 데이터 파싱 로직 추가
+                try:
+                    recall_load_dir = os.path.join(desktop_path, "Recall_load")
+                    self.app_table_tab.srudb_path = os.path.join(recall_load_dir, "SRU_Artifacts", "SRUDB.dat")
+                    self.app_table_tab.software_path = os.path.join(recall_load_dir, "SRU_Artifacts", "SOFTWARE")
+
+                    if not os.path.exists(self.app_table_tab.srudb_path) or not os.path.exists(
+                            self.app_table_tab.software_path):
+                        print("SRUM 파일이 없습니다. SRUM 파싱을 건너뜁니다.")
+                        return
+
+                    print("SRUM 데이터 파싱 시작")
+                    self.app_table_tab.analyze_srum_data_for_analysis_mode()  # run_srum_tool 대체
+                    print("SRUM 데이터 파싱 완료")
+                except Exception as e:
+                    print(f"SRUM 데이터 파싱 중 오류 발생: {e}")
+
             # 분석 PC 모드에서 후속 파일 선택 실행
             if self.current_mode == 'analysis':
                 self.open_additional_files_dialog()
+
+            # LECmd 실행 로직 추가
+            if self.current_mode == 'target':
+                # 대상 PC 모드에서 자동으로 LECmd 실행
+                recent_folder = os.path.join(desktop_path, "Recall_load", "Recent_Artifact")
+                if os.path.exists(recent_folder):
+                    print(f"[DEBUG] 대상 PC 모드에서 Recent_Artifact 처리: {recent_folder}")
+                    if hasattr(self.app_table_tab, 'run_lecmd_with_path'):
+                        self.app_table_tab.run_lecmd_with_path(recent_folder)
+                    else:
+                        print("[ERROR] AppTableWidget에 run_lecmd_with_path 메서드가 없습니다.")
+                else:
+                    print("[ERROR] 대상 PC 모드에서 Recent_Artifact 폴더를 찾을 수 없습니다.")
+
+            elif self.current_mode == 'analysis':
+                # 분석 PC 모드에서 수동으로 Recent 폴더 선택
+                recent_folder = QFileDialog.getExistingDirectory(self, "Recent 폴더 선택", desktop_path)
+                if recent_folder:
+                    print(f"[DEBUG] 분석 PC 모드에서 선택된 Recent 폴더: {recent_folder}")
+                    if hasattr(self.app_table_tab, 'run_lecmd_with_path'):
+                        self.app_table_tab.run_lecmd_with_path(recent_folder)
+                    else:
+                        print("[ERROR] AppTableWidget에 run_lecmd_with_path 메서드가 없습니다.")
+                else:
+                    print("[DEBUG] 분석 PC 모드에서 Recent 폴더가 선택되지 않았습니다.")
+
+
         else:
             QMessageBox.warning(self, "파일 선택 취소", "ukg.db 파일이 선택되지 않았습니다.")
 

@@ -4,7 +4,9 @@ import os
 import shutil
 import subprocess
 import ctypes
+import json
 import time
+from datetime import datetime, timedelta
 import pytz
 from ctypes import wintypes
 import pandas as pd
@@ -73,11 +75,10 @@ class AppTableWidget(QWidget):
         self.info_label.setAlignment(Qt.AlignCenter)
 
         self.text_box1 = QTextEdit(self)
-        self.text_box2 = QTextEdit(self)
         self.text_box3 = QTextEdit(self)
         self.text_box4 = QTextEdit(self)
 
-        for text_box in [self.text_box1, self.text_box2, self.text_box3, self.text_box4]:
+        for text_box in [self.text_box1, self.text_box3, self.text_box4]:
             text_box.setReadOnly(True)
 
         self.table_view.setSortingEnabled(True)  # 정렬 기능 활성화
@@ -92,7 +93,6 @@ class AppTableWidget(QWidget):
         right_widget = QWidget()
         right_layout = QVBoxLayout()
         right_layout.addWidget(self.text_box1)
-        right_layout.addWidget(self.text_box2)
         right_layout.addWidget(self.text_box3)
         right_layout.addWidget(self.text_box4)
         right_widget.setLayout(right_layout)
@@ -168,26 +168,159 @@ class AppTableWidget(QWidget):
         self.csv_data = csv_data
         print(f"[DEBUG] AppTableWidget에 CSV 데이터가 설정되었습니다. 총 {len(self.csv_data)}개의 행")
 
+    def run_lecmd_with_path(self, recent_folder):
+        """
+        LECmd 실행 및 결과를 Recall_load 폴더에 저장하는 함수.
+        :param recent_folder: LECmd가 처리할 Recent 파일 경로
+        """
+        import subprocess
+        import os
+        import glob
+        import json
+
+        try:
+            # 실행 파일 및 출력 경로 설정
+            lecmd_path = os.path.join(os.getcwd(), "LECmd.exe")
+            recall_load_path = os.path.join(os.path.expanduser("~"), "Desktop", "Recall_load")
+
+            # Recall_load 폴더 생성
+            os.makedirs(recall_load_path, exist_ok=True)
+
+            # LECmd 실행 명령어 구성
+            command = [lecmd_path, "-d", recent_folder, "--json", recall_load_path]
+            print(f"[DEBUG] LECmd 실행 명령어: {' '.join(command)}")
+
+            # LECmd 실행
+            process = subprocess.run(command, capture_output=True, text=True)
+
+            if process.returncode == 0:
+                print("[DEBUG] LECmd 실행 성공")
+                print(process.stdout)
+            else:
+                print(f"[ERROR] LECmd 실행 실패: {process.stderr.strip()}")
+                return
+
+            # JSON 파일 찾기
+            json_files = glob.glob(os.path.join(recall_load_path, "*.json"))
+            if not json_files:
+                print("[ERROR] LECmd 실행 결과 JSON 파일을 찾을 수 없습니다.")
+                return
+
+            # 첫 번째 JSON 파일 선택
+            json_file_path = json_files[0]
+            print(f"[DEBUG] JSON 파일 경로: {json_file_path}")
+
+            # JSON 파일 처리
+            self.process_lecmd_results(json_file_path)
+
+        except FileNotFoundError:
+            print("[ERROR] LECmd 실행 파일을 찾을 수 없습니다.")
+        except Exception as e:
+            print(f"[ERROR] LECmd 실행 중 오류 발생: {e}")
+
+    def process_lecmd_results(self, json_file_path):
+        """
+        LECmd JSON 결과에서 SourceFile과 SourceCreated를 처리하고,
+        테이블의 TimeStamp 열과 비교하여 ±1분 범위 내의 데이터를 text_box3에 출력.
+        :param json_file_path: LECmd 결과 JSON 파일 경로
+        """
+        import json
+        from datetime import datetime, timedelta
+        import os
+
+        try:
+            with open(json_file_path, "r", encoding="utf-8") as f:
+                json_lines = f.readlines()
+
+            # 결과를 저장할 문자열 리스트
+            result_lines = []
+
+            # 테이블 모델 가져오기
+            model = self.table_view.model()
+            if model is None:
+                self.text_box3.setText("[ERROR] 테이블 모델이 설정되지 않았습니다.")
+                return
+
+            # JSON 데이터 처리
+            for line in json_lines:
+                try:
+                    # JSON 라인 파싱
+                    item = json.loads(line)
+
+                    # SourceCreated를 KST로 변환
+                    utc_time = datetime.fromisoformat(item["SourceCreated"].replace("Z", "+00:00"))
+                    kst_time = utc_time + timedelta(hours=9)
+
+                    # SourceFile에서 파일명 추출 및 .lnk 제거
+                    source_file_path = item["SourceFile"]
+                    source_file_name = os.path.basename(source_file_path).replace(".lnk", "")
+
+                    # 테이블 데이터와 비교
+                    match_found = False
+                    for row in range(model.rowCount()):
+                        table_time_str = model.data(model.index(row, 5))  # TimeStamp 열
+                        if table_time_str:
+                            # 테이블의 TimeStamp를 offset-aware로 변환
+                            table_time = datetime.strptime(table_time_str, '%Y-%m-%d %H:%M:%S')
+                            table_time = table_time.replace(tzinfo=None)  # offset-naive로 변환
+
+                            # ±1분 범위 비교
+                            if abs((table_time - kst_time.replace(tzinfo=None)).total_seconds()) <= 60:
+                                match_found = True
+                                break
+
+                    # 매칭 데이터가 있으면 결과에 추가
+                    if match_found:
+                        result_lines.append(f"파일 이름: {source_file_name}")
+                        result_lines.append(f"생성 시간 (KST): {kst_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                        result_lines.append("-" * 50)  # 구분선
+
+                except json.JSONDecodeError as e:
+                    result_lines.append(f"[WARNING] JSON 파싱 실패: {e}")
+                except Exception as e:
+                    result_lines.append(f"[ERROR] JSON 처리 중 오류 발생: {e}")
+
+            # 결과를 text_box3에 출력
+            if result_lines:
+                self.text_box3.setText("\n".join(result_lines))
+            else:
+                self.text_box3.setText("±1분 내에 매칭되는 데이터가 없습니다.")
+
+        except FileNotFoundError:
+            self.text_box3.setText("[ERROR] JSON 파일을 찾을 수 없습니다.")
+        except Exception as e:
+            self.text_box3.setText(f"[ERROR] JSON 결과 처리 중 오류 발생: {e}")
+
     def on_table_selection_changed(self, selected, deselected):
-        selected_indexes = self.table_view.selectionModel().selectedIndexes()
-        if selected_indexes:
+        """
+        테이블 행 선택 시 Prefetch, SRUM 데이터를 처리하고, JSON 데이터와 비교하여 결과를 text_box3에 출력.
+        """
+        try:
+            selected_indexes = self.table_view.selectionModel().selectedIndexes()
+            if not selected_indexes:
+                # 선택된 데이터가 없을 경우 text_box3를 초기화
+                self.text_box3.setText("테이블에서 선택된 항목이 없습니다.")
+                print("[DEBUG] 선택된 항목이 없습니다.")
+                return
+
+            # 선택된 데이터 가져오기
             row = selected_indexes[0].row()
             model = self.table_view.model()
             if model:
                 app_path = model.data(model.index(row, 2))  # Path 열
                 app_time = model.data(model.index(row, 5))  # TimeStamp 열
                 print(f"[DEBUG] 선택된 테이블 데이터 - Path: {app_path}, TimeStamp: {app_time}")
+
                 # 파일명 추출
                 app_name = os.path.basename(app_path)
                 print(f"[DEBUG] 추출된 파일명: {app_name}")
+
                 # Prefetch 데이터가 있고 비어있지 않은 경우에만 필터링
                 if hasattr(self, 'prefetch_data') and not self.prefetch_data.empty:
-                    # 파일명과 일치하는 Prefetch 데이터 필터링
                     matching_prefetch = self.prefetch_data[
                         self.prefetch_data['ExecutableName'].str.contains(app_name, case=False, na=False)
                     ]
                     if not matching_prefetch.empty:
-                        # text_box1에 매칭된 Prefetch 데이터만 표시
                         prefetch_info = []
                         for _, row in matching_prefetch.iterrows():
                             prefetch_info.append(f"실행 파일: {row['ExecutableName']}")
@@ -200,6 +333,7 @@ class AppTableWidget(QWidget):
                     else:
                         self.text_box1.setText(f"'{app_name}'에 대한 Prefetch 데이터가 없습니다.")
                         print(f"[DEBUG] {app_name}에 대한 Prefetch 데이터 없음")
+
                 # SRUM 데이터와 비교
                 if hasattr(self, 'csv_data') and self.csv_data is not None:
                     srum_data = self.get_srum_related_data(app_path, app_time)
@@ -207,6 +341,87 @@ class AppTableWidget(QWidget):
                 else:
                     print("[DEBUG] CSV 데이터가 AppTableWidget에 설정되지 않았습니다.")
                     self.text_box4.setText("CSV 데이터가 없습니다.")
+
+                # JSON 데이터와 SourceCreated 비교
+                if app_time:
+                    table_time = datetime.strptime(app_time, '%Y-%m-%d %H:%M:%S')  # datetime 사용
+                    self.compare_json_with_timestamp(table_time)
+            else:
+                print("[DEBUG] 모델이 설정되지 않았습니다.")
+
+        except Exception as e:
+            print(f"[ERROR] on_table_selection_changed 처리 중 오류 발생: {e}")
+            self.text_box3.setText(f"[ERROR] 데이터 처리 중 오류 발생: {e}")
+
+    def compare_json_with_timestamp(self, table_time):
+        """
+        테이블의 TimeStamp와 JSON 데이터의 SourceCreated를 비교하여 결과를 text_box3에 출력.
+        Recall_load 폴더 아래의 JSON 파일을 읽음.
+        :param table_time: 선택된 테이블의 TimeStamp (datetime 객체)
+        """
+        import glob
+        from datetime import datetime, timedelta
+        import os
+
+        try:
+            # Recall_load 폴더에서 모든 JSON 파일 탐색
+            recall_load_path = os.path.join(os.path.expanduser("~"), "Desktop", "Recall_load")
+            json_files = glob.glob(os.path.join(recall_load_path, "*.json"))
+
+            if not json_files:
+                self.text_box3.setText("[ERROR] Recall_load 폴더에서 JSON 파일을 찾을 수 없습니다.")
+                print("[ERROR] Recall_load 폴더에서 JSON 파일을 찾을 수 없습니다.")
+                return
+
+            # 가장 최근에 생성된 JSON 파일 선택
+            json_file_path = max(json_files, key=os.path.getctime)
+            print(f"[DEBUG] 선택된 JSON 파일 경로: {json_file_path}")
+
+            # JSON 파일 읽기
+            with open(json_file_path, "r", encoding="utf-8") as f:
+                json_lines = f.readlines()
+
+            # 결과를 저장할 문자열 리스트
+            result_lines = []
+
+            # JSON 데이터 처리
+            for line in json_lines:
+                try:
+                    # JSON 라인 파싱
+                    item = json.loads(line)
+
+                    # SourceCreated를 KST로 변환
+                    utc_time = datetime.fromisoformat(item["SourceCreated"].replace("Z", "+00:00"))
+                    kst_time = utc_time + timedelta(hours=9)
+
+                    # 테이블의 table_time을 offset-naive로 변환
+                    table_time_naive = table_time.replace(tzinfo=None)
+                    kst_time_naive = kst_time.replace(tzinfo=None)
+
+                    # ±1분 범위 비교
+                    if abs((table_time_naive - kst_time_naive).total_seconds()) <= 60:
+                        # SourceFile에서 파일명 추출 및 .lnk 제거
+                        source_file_path = item["SourceFile"]
+                        source_file_name = os.path.basename(source_file_path).replace(".lnk", "")
+
+                        # 결과 추가
+                        result_lines.append(f"파일 이름: {source_file_name}")
+                        result_lines.append(f"생성 시간 (KST): {kst_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                        result_lines.append("-" * 50)  # 구분선
+
+                except json.JSONDecodeError as e:
+                    result_lines.append(f"[WARNING] JSON 파싱 실패: {e}")
+                except Exception as e:
+                    result_lines.append(f"[ERROR] JSON 처리 중 오류 발생: {e}")
+
+            # 결과를 text_box3에 출력
+            if result_lines:
+                self.text_box3.setText("\n".join(result_lines))
+            else:
+                self.text_box3.setText("±1분 내에 매칭되는 데이터가 없습니다.")
+
+        except Exception as e:
+            self.text_box3.setText(f"[ERROR] JSON 결과 처리 중 오류 발생: {e}")
 
     def convert_foreground_cycle_time_to_seconds(self, foreground_cycle_time):
         """
